@@ -1,0 +1,66 @@
+name: Daily update
+
+# Runs after each US trading day: pulls the IBKR Flex report, updates the encrypted
+# ledger, writes and timestamps immutable records, rebuilds site/data.json, and
+# deploys the page to GitHub Pages. Also redeploys when the page itself changes.
+on:
+  schedule:
+    - cron: "23 7 * * 2-6" # 07:23 UTC Tue–Sat ≈ 2–3 am New York, after IBKR finishes the day's statement
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths: ["site/**", "config.json", "data/notes.json", "scripts/**"]
+
+permissions:
+  contents: write
+  pages: write
+  id-token: write
+
+concurrency:
+  group: nugget-index
+  cancel-in-progress: false
+
+jobs:
+  update:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - run: pip install -r requirements.txt
+      - name: Pull IBKR, write records, timestamp, build
+        env:
+          IBKR_FLEX_TOKEN: ${{ secrets.IBKR_FLEX_TOKEN }}
+          IBKR_FLEX_QUERY_ID: ${{ secrets.IBKR_FLEX_QUERY_ID }}
+          NUGGET_DATA_KEY: ${{ secrets.NUGGET_DATA_KEY }}
+        run: python scripts/run_daily.py
+      - name: Commit new data
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add data site
+          if git diff --cached --quiet; then
+            echo "Nothing new"
+          else
+            git commit -m "Daily update $(date -u +%Y-%m-%d)"
+            git push
+          fi
+
+  deploy:
+    needs: update
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deploy.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+      - uses: actions/configure-pages@v5
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: site
+      - id: deploy
+        uses: actions/deploy-pages@v4

@@ -1,0 +1,611 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Nugget Index</title>
+<meta name="description" content="A live, verifiable track record built from every trade in an Interactive Brokers account.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600&family=Geist+Mono:wght@400;500&family=Instrument+Serif:ital@1&display=swap">
+<style>
+:root { padding: env(safe-area-inset-top, 0px) 0 env(safe-area-inset-bottom, 0px); }
+body { margin: 0; }
+img { max-width: 100%; }
+[hidden] { display: none !important; }
+/* Layout: one narrow centered column on warm paper, after the Plutus reference — title and byline, a quiet % chart card with range pills, then holdings, map, monthly grid, calendar, trades, stats and proof as white cards. Light-only by choice. */
+:root {
+  color-scheme: light;
+  --paper: #f7f6f1;
+  --card: #ffffff;
+  --rule: #e9e7e0;
+  --rule-2: #dcd9d0;
+  --ink: #111522;
+  --muted: #6b6f7b;
+  --faint: #a2a5ad;
+  --tint: #f2f0ea;
+  --bench: #3b7ff2;
+  --up: #17905a;
+  --down: #d2453b;
+  --f-sans: "Geist", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --f-mono: "Geist Mono", ui-monospace, "SFMono-Regular", Menlo, monospace;
+  --f-serif: "Instrument Serif", Georgia, serif;
+}
+:root[data-conv="cn"] { --up: #d2453b; --down: #17905a; }
+* { box-sizing: border-box; }
+body { background: var(--paper); color: var(--ink); font-family: var(--f-sans); font-size: 14px; line-height: 1.55; -webkit-font-smoothing: antialiased; }
+button { font: inherit; color: inherit; }
+button:focus-visible, a:focus-visible, tr:focus-visible { outline: 2px solid var(--ink); outline-offset: 2px; }
+.mono { font-family: var(--f-mono); font-variant-numeric: tabular-nums; }
+.up { color: var(--up); } .down { color: var(--down); } .flat { color: var(--muted); }
+
+.topbar { border-bottom: 1px solid var(--rule); background: var(--paper); }
+.topbar .in { max-width: 1120px; margin: 0 auto; padding-inline: 20px; padding-block: 12px; display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap; }
+.brand { display: flex; align-items: center; gap: 9px; font-size: 12px; letter-spacing: 0.24em; color: var(--ink); font-weight: 500; }
+.brand svg { display: block; }
+.tb-right { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+.demo { font-size: 12px; color: var(--muted); border: 1px solid var(--rule-2); border-radius: 6px; padding: 4px 10px; background: var(--card); }
+.toggle { display: inline-flex; border: 1px solid var(--rule-2); border-radius: 6px; overflow: hidden; background: var(--card); }
+.toggle button { border: 0; background: transparent; padding: 4px 10px; font-size: 12px; color: var(--muted); cursor: pointer; }
+.toggle button[aria-pressed="true"] { background: var(--ink); color: #fff; }
+
+.col { max-width: 760px; margin: 0 auto; padding-inline: 20px; padding-block: 30px 64px; display: grid; gap: 16px; }
+.head { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 16px; align-items: start; margin-bottom: 4px; }
+.head h1 { margin: 0; font-weight: 400; font-size: clamp(30px, 5vw, 38px); letter-spacing: -0.025em; line-height: 1.1; text-wrap: balance; }
+.byline { margin-top: 8px; font-size: 14px; }
+.byline em { font-family: var(--f-serif); font-style: italic; font-size: 16.5px; }
+.share { display: flex; gap: 8px; }
+.sq { width: 38px; height: 38px; border: 1px solid var(--rule-2); border-radius: 8px; background: var(--card); display: grid; place-items: center; color: var(--ink); text-decoration: none; }
+.sq.logo { background: var(--ink); border-color: var(--ink); }
+a.sq:hover { border-color: var(--ink); }
+
+.card { background: var(--card); border: 1px solid var(--rule); border-radius: 10px; min-width: 0; }
+.card.pad { padding: 18px 18px 16px; }
+.card h2 { margin: 0; font-size: 15px; font-weight: 500; letter-spacing: -0.01em; }
+.ch { display: flex; justify-content: space-between; align-items: center; gap: 10px 14px; flex-wrap: wrap; margin-bottom: 14px; }
+.note { font-size: 12px; color: var(--faint); }
+
+.chart-card { padding: 14px 14px 16px; }
+.legend { display: flex; flex-wrap: wrap; gap: 4px 16px; align-items: center; font-family: var(--f-mono); font-size: 11px; letter-spacing: 0.05em; color: var(--muted); padding: 2px 4px 8px; min-height: 26px; }
+.legend b { font-weight: 500; }
+.legend .dot { display: inline-block; width: 7px; height: 7px; border-radius: 50%; margin-right: 6px; }
+.legend .date { color: var(--faint); }
+.legend .tr { font-family: var(--f-sans); letter-spacing: 0; color: var(--ink); font-size: 12px; flex-basis: 100%; }
+#main-chart { height: 330px; }
+.pills { display: flex; justify-content: center; flex-wrap: wrap; gap: 4px; margin-top: 12px; }
+.pills button { border: 0; background: transparent; border-radius: 999px; padding: 4px 11px; font-family: var(--f-mono); font-size: 11.5px; color: var(--muted); cursor: pointer; }
+.pills button:hover { color: var(--ink); }
+.pills button[aria-pressed="true"] { background: var(--ink); color: #fff; }
+.pills .sep { width: 1px; background: var(--rule); margin: 4px 6px; }
+
+.kpis { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); }
+.kpi { padding: 14px 16px; display: grid; gap: 2px; border-left: 1px solid var(--rule); min-width: 0; }
+.kpi:first-child { border-left: 0; }
+.kpi .k { font-family: var(--f-mono); font-size: 10.5px; color: var(--muted); letter-spacing: 0.1em; text-transform: uppercase; }
+.kpi .v { font-family: var(--f-mono); font-size: 19px; font-weight: 500; font-variant-numeric: tabular-nums; }
+.kpi .s { font-family: var(--f-mono); font-size: 11px; color: var(--faint); }
+
+.tbl-wrap { overflow-x: auto; }
+table.t { width: 100%; border-collapse: collapse; font-variant-numeric: tabular-nums; }
+.t thead th { background: var(--tint); font-family: var(--f-mono); font-size: 10.5px; font-weight: 400; letter-spacing: 0.12em; color: var(--muted); text-align: left; padding: 10px 12px; white-space: nowrap; border-bottom: 1px solid var(--rule); }
+.t thead th.r, .t td.r { text-align: right; }
+.t td { padding: 12px; border-bottom: 1px solid var(--rule); font-size: 13px; white-space: nowrap; }
+.t tbody tr:last-child td { border-bottom: 0; }
+.t td.n { color: var(--faint); font-family: var(--f-mono); font-size: 12px; width: 32px; }
+.tk { font-family: var(--f-mono); font-weight: 500; font-size: 12.5px; margin-right: 8px; }
+.nm { color: var(--muted); font-size: 12.5px; }
+.dir { font-family: var(--f-mono); font-size: 11px; letter-spacing: 0.06em; }
+.t td.mono { font-family: var(--f-mono); font-size: 12.5px; }
+.card-head { padding: 16px 18px 12px; display: flex; justify-content: space-between; align-items: center; gap: 10px 14px; flex-wrap: wrap; }
+
+#treemap { height: 300px; }
+.seg { display: inline-flex; gap: 2px; background: var(--tint); border-radius: 999px; padding: 2px; }
+.seg button { border: 0; background: transparent; padding: 3px 10px; border-radius: 999px; font-size: 12px; color: var(--muted); cursor: pointer; white-space: nowrap; }
+.seg button[aria-pressed="true"] { background: var(--card); color: var(--ink); box-shadow: 0 0 0 1px var(--rule-2); }
+
+.mtab { border-collapse: separate; border-spacing: 2px; width: 100%; min-width: 600px; font-family: var(--f-mono); font-size: 11.5px; font-variant-numeric: tabular-nums; }
+.mtab th { font-weight: 400; color: var(--faint); font-size: 10.5px; padding: 0 2px 4px; text-align: center; }
+.mtab td { text-align: center; padding: 8px 2px; border-radius: 3px; background: var(--tint); }
+.mtab td.yr { background: transparent; color: var(--muted); text-align: left; padding-left: 0; }
+.mtab td.empty { background: transparent; color: var(--rule-2); }
+.mtab td.tot { font-weight: 500; }
+
+.cal-scroll { overflow-x: auto; }
+.cal-foot { display: flex; flex-wrap: wrap; gap: 10px 20px; justify-content: space-between; align-items: center; margin-top: 6px; font-size: 12px; color: var(--muted); }
+.cal-foot b { color: var(--ink); font-weight: 500; font-family: var(--f-mono); }
+.scale { display: inline-flex; align-items: center; gap: 3px; font-family: var(--f-mono); font-size: 10.5px; color: var(--faint); }
+.scale i { width: 12px; height: 12px; border-radius: 2px; display: inline-block; }
+
+.jrow > td { cursor: pointer; }
+.jrow:hover > td { background: #fbfaf7; }
+.side { font-family: var(--f-mono); font-size: 11px; letter-spacing: 0.06em; }
+.jnote { color: var(--muted); font-size: 12.5px; max-width: 260px; overflow: hidden; text-overflow: ellipsis; }
+.jdet td { background: #fbfaf7; padding: 12px 14px 16px; white-space: normal; }
+.jdet .full { font-size: 13px; margin-bottom: 8px; }
+.jdet pre { margin: 0 0 8px; font: 11px/1.6 var(--f-mono); color: var(--muted); background: var(--card); border: 1px solid var(--rule); border-radius: 6px; padding: 10px; overflow-x: auto; }
+.hashline { display: flex; flex-wrap: wrap; gap: 6px 12px; align-items: center; font-size: 11.5px; color: var(--muted); }
+.hashline code { font-family: var(--f-mono); color: var(--ink); word-break: break-all; }
+.btn { border: 1px solid var(--rule-2); background: var(--card); border-radius: 6px; padding: 4px 10px; font-size: 12px; cursor: pointer; }
+.btn:hover { border-color: var(--ink); }
+.tag { display: inline-block; font-size: 11px; color: var(--muted); border: 1px solid var(--rule-2); border-radius: 4px; padding: 1px 7px; }
+.more { padding: 12px 18px 16px; }
+
+.stats { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); column-gap: 28px; margin: 0; }
+.stats > div { display: flex; justify-content: space-between; gap: 12px; padding: 9px 0; border-bottom: 1px solid var(--rule); font-size: 13px; }
+.stats dt { color: var(--muted); }
+.stats dd { margin: 0; font-family: var(--f-mono); font-size: 12.5px; text-align: right; }
+.stats dd small { color: var(--faint); font-size: 11px; margin-left: 6px; }
+
+.prow { display: grid; grid-template-columns: 140px minmax(0, 1fr); gap: 8px 18px; padding: 14px 0; border-bottom: 1px solid var(--rule); }
+.prow:last-child { border-bottom: 0; padding-bottom: 2px; }
+.prow .lab { font-family: var(--f-mono); font-size: 10.5px; color: var(--faint); letter-spacing: 0.1em; padding-top: 2px; text-transform: uppercase; }
+.prow h3 { margin: 0 0 4px; font-size: 13.5px; font-weight: 500; }
+.prow p { margin: 0 0 6px; font-size: 12.5px; color: var(--muted); max-width: 60ch; }
+.prow code { font-family: var(--f-mono); font-size: 11px; word-break: break-all; }
+
+.foot { font-size: 11.5px; color: var(--faint); line-height: 1.75; margin: 6px 2px 0; }
+.foot a { color: var(--muted); }
+
+@media (max-width: 600px) {
+  .col { padding-inline: 16px; padding-block: 22px 48px; gap: 12px; }
+  .head { grid-template-columns: minmax(0, 1fr); }
+  .kpis { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .kpi:nth-child(3) { border-left: 0; }
+  .kpi:nth-child(n+3) { border-top: 1px solid var(--rule); }
+  #main-chart { height: 260px; }
+  #treemap { height: 260px; }
+  .stats { grid-template-columns: minmax(0, 1fr); }
+  .prow { grid-template-columns: minmax(0, 1fr); gap: 4px; }
+  .hide-s { display: none; }
+  .t td, .t thead th { padding-left: 9px; padding-right: 9px; }
+}
+</style>
+</head>
+<body>
+<div class="topbar"><div class="in">
+  <div class="brand">
+    <svg width="22" height="22" viewBox="0 0 22 22" aria-hidden="true"><circle cx="11" cy="11" r="10" fill="none" stroke="#111522" stroke-width="1.2"/><path id="brand-line" fill="none" stroke="#111522" stroke-width="1.4" stroke-linejoin="round" stroke-linecap="round"/></svg>
+    LIVE INDEX
+  </div>
+  <div class="tb-right">
+    <span class="demo" id="demo-pill" hidden>Demo data · sample trades at real closing prices</span>
+    <div class="toggle" role="group" aria-label="Gain and loss colors" id="conv">
+      <button type="button" data-c="us" aria-pressed="true">Up = Green</button>
+      <button type="button" data-c="cn" aria-pressed="false">Up = Red</button>
+    </div>
+  </div>
+</div></div>
+
+<main class="col">
+  <div class="head">
+    <div>
+      <h1 id="title">Nugget Index</h1>
+      <div class="byline" id="byline"></div>
+    </div>
+    <div class="share">
+      <span class="sq logo" aria-hidden="true"><svg width="18" height="18" viewBox="0 0 18 18"><path id="logo-line" fill="none" stroke="#fff" stroke-width="1.5" stroke-linejoin="round" stroke-linecap="round"/></svg></span>
+      <a class="sq" id="share-x" href="https://x.com/intent/tweet" target="_blank" rel="noopener" aria-label="Share on X"><svg width="15" height="15" viewBox="0 0 24 24"><path fill="currentColor" d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-5.214-6.817L4.99 21.75H1.68l7.73-8.835L1.254 2.25H8.08l4.713 6.231zm-1.161 17.52h1.833L7.084 4.126H5.117z"/></svg></a>
+    </div>
+  </div>
+
+  <section class="card chart-card" aria-label="Performance chart">
+    <div class="legend" id="legend"></div>
+    <div id="main-chart"></div>
+    <div class="pills" id="pills">
+      <button type="button" data-r="1W">1W</button>
+      <button type="button" data-r="1M">1M</button>
+      <button type="button" data-r="3M">3M</button>
+      <button type="button" data-r="YTD">YTD</button>
+      <button type="button" data-r="1Y">1Y</button>
+      <button type="button" data-r="ALL" aria-pressed="true">Inception</button>
+      <span class="sep" aria-hidden="true"></span>
+      <button type="button" id="marks-btn" aria-pressed="false">Trades</button>
+    </div>
+  </section>
+
+  <section class="card kpis" id="kpis" aria-label="Key metrics"></section>
+
+  <section class="card" aria-labelledby="h-hold">
+    <div class="card-head"><h2 id="h-hold">Holdings</h2><span class="note">Dollar amounts hidden</span></div>
+    <div class="tbl-wrap"><table class="t">
+      <thead><tr><th>#</th><th>SECURITY</th><th>DIRECTION</th><th class="r">WEIGHT</th><th class="r">UNREALIZED</th><th class="r hide-s">HELD</th></tr></thead>
+      <tbody id="hold-body"></tbody>
+    </table></div>
+  </section>
+
+  <section class="card pad" aria-labelledby="h-map">
+    <div class="ch">
+      <h2 id="h-map">Holdings Map</h2>
+      <div class="seg" role="group" aria-label="Color by" id="mapmode">
+        <button type="button" data-k="day" aria-pressed="true">Today</button>
+        <button type="button" data-k="upnl" aria-pressed="false">Unrealized P&amp;L</button>
+      </div>
+    </div>
+    <div id="treemap"></div>
+  </section>
+
+  <section class="card pad" aria-labelledby="h-month">
+    <div class="ch">
+      <h2 id="h-month">Monthly Returns</h2>
+      <div class="seg" role="group" aria-label="View" id="mview">
+        <button type="button" data-v="abs" aria-pressed="true">Portfolio</button>
+        <button type="button" data-v="ex" aria-pressed="false" class="bl-vs">vs S&amp;P 500</button>
+      </div>
+    </div>
+    <div class="tbl-wrap"><table class="mtab" id="mtab"></table></div>
+  </section>
+
+  <section class="card pad" aria-labelledby="h-cal">
+    <div class="ch">
+      <h2 id="h-cal">Daily Returns</h2>
+      <div class="seg" role="group" aria-label="Year" id="years"></div>
+    </div>
+    <div class="cal-scroll"><div id="calendar"></div></div>
+    <div class="cal-foot"><div id="cal-stats" style="display:flex;gap:16px;flex-wrap:wrap"></div><div class="scale" id="scale"></div></div>
+  </section>
+
+  <section class="card" aria-labelledby="h-jl">
+    <div class="card-head">
+      <h2 id="h-jl">Trades</h2><span class="note" id="delay-note" hidden></span>
+      <div class="seg" role="group" aria-label="Filter" id="jfilter">
+        <button type="button" data-f="all" aria-pressed="true">All</button>
+        <button type="button" data-f="BUY">Buys</button>
+        <button type="button" data-f="SELL">Sells</button>
+        <button type="button" data-f="flow">Cash flows</button>
+      </div>
+    </div>
+    <div class="tbl-wrap"><table class="t">
+      <thead><tr><th>DATE</th><th>SECURITY</th><th>SIDE</th><th class="r">% OF NAV</th><th class="r">RESULT</th><th class="hide-s">NOTE</th></tr></thead>
+      <tbody id="journal"></tbody>
+    </table></div>
+    <div class="more"><button type="button" class="btn" id="more-btn"></button></div>
+  </section>
+
+  <section class="card pad" aria-labelledby="h-stats">
+    <div class="ch"><h2 id="h-stats">Risk &amp; Trading Stats</h2><span class="note" id="bl-paren">S&amp;P 500 in parentheses</span></div>
+    <dl class="stats" id="stats"></dl>
+  </section>
+
+  <section class="card pad" aria-labelledby="h-proof">
+    <div class="ch"><h2 id="h-proof">Proof</h2><span class="note">Every record is timestamped on Bitcoin</span></div>
+    <div>
+      <div class="prow" id="g-row"><span class="lab">Account lock<br><span id="g-date"></span></span><div><h3>Every trade counts, from day one</h3><p id="g-decl"></p><code id="g-hash"></code> <span class="tag" id="g-tag"></span></div></div>
+      <div class="prow" id="s-row"><span class="lab">Latest record<br><span id="s-date"></span></span><div><h3>Positions, cash and NAV recorded after every close</h3><p>Each snapshot gets a SHA-256 fingerprint anchored in a Bitcoin block. Change any number later and the fingerprint no longer matches.</p><code id="s-hash"></code> <span class="tag" id="s-tag"></span></div></div>
+      <div class="prow"><span class="lab">Third-party check</span><div><h3>Matched against IBKR's own numbers</h3><p>Monthly IBKR statements are fingerprinted too, and the time-weighted return from IBKR PortfolioAnalyst is shown side by side.</p><span class="tag">Monthly</span></div></div>
+    </div>
+  </section>
+
+  <p class="foot" id="foot"></p>
+</main>
+<noscript><p style="max-width:760px;margin:0 auto;padding:0 20px 40px;color:#6b6f7b">This page needs JavaScript to draw the charts.</p></noscript>
+<script src="https://cdn.jsdelivr.net/npm/lightweight-charts@4.2.0/dist/lightweight-charts.standalone.production.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/echarts/5.5.0/echarts.min.js"></script>
+<script>
+fetch("data.json", { cache: "no-store" })
+  .then((r) => { if (!r.ok) throw new Error("HTTP " + r.status); return r.json(); })
+  .then(start)
+  .catch((e) => { document.getElementById("main-chart").innerHTML = `<p style="color:#6b6f7b;padding:20px">Could not load data.json (${e.message}). Refresh to try again.</p>`; });
+function start(D) {
+const $ = (id) => document.getElementById(id);
+const css = (n) => getComputedStyle(document.documentElement).getPropertyValue(n).trim();
+const sgn = (v) => (v > 0 ? "+" : v < 0 ? "−" : "");
+const pct = (v, d = 1) => sgn(v) + Math.abs(v * 100).toFixed(d) + "%";
+const cls = (v) => (v > 0.00005 ? "up" : v < -0.00005 ? "down" : "flat");
+const fmt = (v, d = 2) => v.toLocaleString("en-US", { minimumFractionDigits: d, maximumFractionDigits: d });
+const SER = D.series, N = SER.length, ST = D.stats;
+const MON = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+const safeGet = (k) => { try { return localStorage.getItem(k); } catch (e) { return null; } };
+const safeSet = (k, v) => { try { localStorage.setItem(k, v); } catch (e) {} };
+const pressed = (gid, attr, val) => document.querySelectorAll(`#${gid} button`).forEach((b) => b.dataset[attr] !== undefined && b.setAttribute("aria-pressed", String(b.dataset[attr] === val)));
+const DEMO_NAMES = { AAPL: "Apple", MSFT: "Microsoft", NVDA: "NVIDIA", AMZN: "Amazon.com", GOOGL: "Alphabet A", META: "Meta Platforms", COST: "Costco", JPM: "JPMorgan Chase", LLY: "Eli Lilly", XOM: "Exxon Mobil", AVGO: "Broadcom", TSLA: "Tesla", UNH: "UnitedHealth", INTC: "Intel", NKE: "Nike" };
+
+const nameOf = (r) => (r && r.name) || DEMO_NAMES[r && (r.t || r.ticker)] || "";
+const BL = D.benchmark_label || "S&P 500";
+const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+const num = (v, d = 2) => (v == null || Number.isNaN(v) ? "—" : v.toFixed(d));
+const pctN = (v, d = 1) => (v == null || Number.isNaN(v) ? "—" : pct(v, d));
+const proofTag = (p) => D.demo ? "Demo · not timestamped" : !p || p.status === "none" ? "Not yet timestamped" : p.status === "confirmed" ? `Bitcoin block #${p.block}` : "Timestamped · awaiting Bitcoin confirmation";
+const hexRgb = (h) => { const n = parseInt(h.slice(1), 16); return [(n >> 16) & 255, (n >> 8) & 255, n & 255]; };
+const mixRgb = (a, b, t) => { const A = hexRgb(a), B = hexRgb(b); return A.map((x, i) => Math.round(x + (B[i] - x) * t)); };
+function heat(v, scale) {
+  if (Math.abs(v) < 1e-9) return { bg: css("--tint"), fg: css("--muted") };
+  const t = 0.12 + 0.88 * Math.pow(Math.min(1, Math.abs(v) / scale), 0.85);
+  const c = mixRgb("#f2f0ea", v > 0 ? css("--up") : css("--down"), t);
+  const lum = (0.299 * c[0] + 0.587 * c[1] + 0.114 * c[2]) / 255;
+  return { bg: `rgb(${c.join(",")})`, fg: lum < 0.6 ? "#ffffff" : css("--ink") };
+}
+
+document.title = D.name || "Nugget Index";
+$("title").textContent = D.name || "Nugget Index";
+$("byline").innerHTML = esc(D.byline || "").replace(/\*(.+?)\*/g, "<em>$1</em>");
+$("demo-pill").hidden = !D.demo;
+document.querySelectorAll(".bl-vs").forEach((b) => (b.textContent = "vs " + BL));
+$("bl-paren").textContent = BL + " in parentheses";
+if (D.trade_delay_days) { $("delay-note").hidden = false; $("delay-note").textContent = `Trades appear ${D.trade_delay_days} days after they happen`; }
+$("foot").innerHTML = (D.demo
+    ? "Demo page. Trades are fictional examples filled at real dividend-adjusted closing prices, with commissions estimated at IBKR's $0.0035 per share, $1 minimum. "
+    : `Built daily from Interactive Brokers reports. Data as of ${D.asof}. `)
+  + "NAV is time-weighted, so deposits and withdrawals do not move it. Dollar amounts are hidden. Not investment advice. Past performance does not predict future results. "
+  + (D.repo ? `Source, records and proofs on <a href="${esc(D.repo)}" target="_blank" rel="noopener">GitHub</a>. ` : "")
+  + 'Charts by <a href="https://www.tradingview.com/" target="_blank" rel="noopener">TradingView</a> Lightweight Charts™.';
+(function marks() {
+  const step = Math.max(1, Math.floor(N / 30));
+  const pts = []; for (let i = 0; i < N; i += step) pts.push(SER[i][1]); pts.push(SER[N - 1][1]);
+  const lo = Math.min(...pts), hi = Math.max(...pts);
+  const path = (x0, w, y0, h) => pts.map((v, i) => (i ? "L" : "M") + (x0 + (i / (pts.length - 1)) * w).toFixed(1) + " " + (y0 + h - ((v - lo) / (hi - lo)) * h).toFixed(1)).join("");
+  $("brand-line").setAttribute("d", path(5, 12, 7, 8));
+  $("logo-line").setAttribute("d", path(3, 12, 4, 10));
+})();
+$("share-x").href = "https://x.com/intent/tweet?text=" + encodeURIComponent(`${D.name || "My live index"}: ${pct(ST.total)} since inception vs ${pct(ST.spy_total)} for the ${BL}.`);
+
+function renderKpis() {
+  const k = [
+    ["CAGR", pctN(ST.cagr), `${BL} ${pctN(ST.spy_cagr)}`, cls(ST.cagr)],
+    ["Max drawdown", pctN(ST.maxdd), `${BL} ${pctN(ST.spy_maxdd)}`, ST.maxdd < 0 ? "down" : ""],
+    ["Sharpe", num(ST.sharpe), `${BL} ${num(ST.spy_sharpe)}`, ""],
+    ["Win rate", ST.win_rate == null ? "—" : Math.round(ST.win_rate * 100) + "%", ST.n_closed ? `${Math.round(ST.win_rate * ST.n_closed)} of ${ST.n_closed} closed` : "No closed trades yet", ""],
+  ];
+  $("kpis").innerHTML = k.map(([a, b, c, d]) => `<div class="kpi"><span class="k">${a}</span><span class="v ${d}">${b}</span><span class="s">${c}</span></div>`).join("");
+}
+
+const LW = window.LightweightCharts;
+let chart, navS, spyS, rangeStart = 0;
+let showMarks = safeGet("pl-marks") === "1";
+const tradesByDate = {}; D.journal.forEach((j) => (tradesByDate[j.date] = tradesByDate[j.date] || []).push(j));
+const idxOf = {}; SER.forEach((r, i) => (idxOf[r[0]] = i));
+function markers() {
+  if (!showMarks) return [];
+  return D.journal.map((j) => ({ time: j.date, position: j.side === "BUY" ? "belowBar" : "aboveBar", color: j.side === "BUY" ? css("--up") : css("--down"), shape: j.side === "BUY" ? "arrowUp" : "arrowDown", text: j.ticker, size: 0.8 }));
+}
+function setLegend(i) {
+  const r = SER[i], b = SER[rangeStart];
+  const tr = tradesByDate[r[0]];
+  $("legend").innerHTML = `<span><span class="dot" style="background:${css("--ink")}"></span>PORTFOLIO <b class="${cls(r[1] / b[1] - 1)}">${pct(r[1] / b[1] - 1, 2)}</b></span>
+    <span><span class="dot" style="background:${css("--bench")}"></span>${esc(BL).toUpperCase()} <b style="color:var(--bench)">${pct(r[2] / b[2] - 1, 2)}</b></span>
+    <span class="date">${r[0]} · NAV ${fmt(r[1])}</span>` + (tr ? `<span class="tr">${tr.map((j) => `<span class="${j.side === "BUY" ? "up" : "down"}">${j.side === "BUY" ? "Bought" : "Sold"} ${j.ticker}</span> ${j.note ? " — " + esc(j.note) : ""}`).join(" · ")}</span>` : "");
+}
+function buildChart() {
+  chart = LW.createChart($("main-chart"), {
+    autoSize: true,
+    layout: { background: { type: "solid", color: "#ffffff" }, textColor: css("--faint"), fontFamily: "Geist Mono, ui-monospace, monospace", fontSize: 10.5, attributionLogo: false },
+    grid: { vertLines: { visible: false }, horzLines: { color: "#f1efe9" } },
+    rightPriceScale: { borderVisible: false, mode: LW.PriceScaleMode.Percentage, scaleMargins: { top: 0.08, bottom: 0.06 }, minimumWidth: 58 },
+    timeScale: { borderVisible: false, fixLeftEdge: true, fixRightEdge: true, rightOffset: 2 },
+    crosshair: {
+      mode: LW.CrosshairMode.Magnet,
+      vertLine: { color: "#c9c6bd", width: 1, style: 3, labelBackgroundColor: css("--ink") },
+      horzLine: { color: "#c9c6bd", width: 1, style: 3, labelBackgroundColor: css("--ink") },
+    },
+    localization: { locale: "en-US", dateFormat: "yyyy-MM-dd", percentageFormatter: (v) => (v > 0 ? "+" : v < 0 ? "−" : "") + Math.abs(v).toFixed(Math.abs(v) < 10 ? 1 : 0) + "%" },
+    handleScale: { mouseWheel: false, pinch: true, axisPressedMouseMove: true },
+    handleScroll: { mouseWheel: false, pressedMouseMove: true, horzTouchDrag: true, vertTouchDrag: false },
+  });
+  spyS = chart.addLineSeries({ color: css("--bench"), lineWidth: 2, lineStyle: LW.LineStyle.Solid, priceLineVisible: false, lastValueVisible: true, crosshairMarkerRadius: 3 });
+  navS = chart.addLineSeries({ color: css("--ink"), lineWidth: 2, priceLineVisible: false, lastValueVisible: true, crosshairMarkerRadius: 4, crosshairMarkerBorderColor: "#ffffff" });
+  spyS.setData(SER.map((r) => ({ time: r[0], value: r[2] })));
+  navS.setData(SER.map((r) => ({ time: r[0], value: r[1] })));
+  navS.setMarkers(markers());
+  chart.subscribeCrosshairMove((p) => {
+    if (!p.time) { setLegend(N - 1); return; }
+    const t = typeof p.time === "string" ? p.time : `${p.time.year}-${String(p.time.month).padStart(2, "0")}-${String(p.time.day).padStart(2, "0")}`;
+    if (idxOf[t] !== undefined) setLegend(idxOf[t]);
+  });
+  requestAnimationFrame(() => requestAnimationFrame(() => setRange(safeGet("pl-range") || "ALL")));
+}
+function setRange(r) {
+  pressed("pills", "r", r); safeSet("pl-range", r);
+  const last = new Date(SER[N - 1][0] + "T00:00:00Z");
+  let from = new Date(last);
+  if (r === "1W") from.setUTCDate(from.getUTCDate() - 7);
+  else if (r === "1M") from.setUTCMonth(from.getUTCMonth() - 1);
+  else if (r === "3M") from.setUTCMonth(from.getUTCMonth() - 3);
+  else if (r === "1Y") from.setUTCFullYear(from.getUTCFullYear() - 1);
+  else if (r === "YTD") from = new Date(Date.UTC(last.getUTCFullYear() - 1, 11, 31));
+  if (r === "ALL") { rangeStart = 0; chart.timeScale().fitContent(); }
+  else {
+    const iso = from.toISOString().slice(0, 10);
+    let i = 0; while (i < N - 1 && SER[i][0] <= iso) i++;
+    rangeStart = Math.max(0, i - 1);
+    chart.timeScale().setVisibleRange({ from: SER[rangeStart][0], to: SER[N - 1][0] });
+  }
+  setLegend(N - 1);
+}
+$("pills").addEventListener("click", (e) => {
+  const b = e.target.closest("button"); if (!b) return;
+  if (b.id === "marks-btn") { showMarks = !showMarks; safeSet("pl-marks", showMarks ? "1" : "0"); b.setAttribute("aria-pressed", String(showMarks)); navS.setMarkers(markers()); return; }
+  setRange(b.dataset.r);
+});
+
+function renderHoldings() {
+  $("hold-body").innerHTML = D.holdings.map((h, i) => `<tr><td class="n">${i + 1}</td><td><span class="tk">${h.t}</span><span class="nm">${esc(nameOf(h))}</span></td>
+    <td><span class="dir ${h.dir === "SHORT" ? "down" : "up"}">${h.dir || "LONG"}</span></td><td class="r mono">${(h.w * 100).toFixed(2)}%</td><td class="r mono ${cls(h.upnl)}">${pct(h.upnl, 2)}</td><td class="r mono hide-s" style="color:var(--muted)">${h.hold == null ? "—" : h.hold + "d"}</td></tr>`).join("")
+    + `<tr><td class="n">${D.holdings.length + 1}</td><td><span class="tk">CASH</span><span class="nm">USD</span></td><td><span class="dir flat">—</span></td><td class="r mono">${(D.cash_w * 100).toFixed(2)}%</td><td class="r mono flat">—</td><td class="r hide-s"></td></tr>`;
+}
+
+let tm, mapKey = safeGet("pl-map") || "day";
+function renderTreemap() {
+  if (!window.echarts) return;
+  if (!tm) tm = echarts.init($("treemap"), null, { renderer: "canvas" });
+  const scale = mapKey === "day" ? 0.03 : 0.8;
+  const bySec = {}; D.holdings.forEach((h) => (bySec[h.sector] = bySec[h.sector] || []).push(h));
+  const data = Object.entries(bySec).map(([s, hs]) => ({
+    name: s,
+    children: hs.map((h) => { const c = heat(h[mapKey], scale); return { name: h.t, value: h.w, h, itemStyle: { color: c.bg }, label: { color: c.fg } }; }),
+  }));
+  data.push({ name: "Cash", children: [{ name: "CASH", value: D.cash_w, h: null, itemStyle: { color: css("--tint") }, label: { color: css("--muted") } }] });
+  tm.setOption({
+    animation: false,
+    tooltip: {
+      backgroundColor: "#ffffff", borderColor: css("--rule-2"), textStyle: { color: css("--ink"), fontSize: 12, fontFamily: "Geist, sans-serif" }, extraCssText: "box-shadow:0 6px 20px rgba(17,21,34,.08);border-radius:8px;",
+      formatter: (p) => { const h = p.data && p.data.h; if (!h) return p.data && p.data.name === "CASH" ? `Cash · ${(D.cash_w * 100).toFixed(1)}%` : p.name; return `<b>${h.t}</b> ${esc(nameOf(h))}<br>Weight ${(h.w * 100).toFixed(1)}% · Today ${pct(h.day, 2)}<br>Unrealized ${pct(h.upnl, 1)} · Held ${h.hold == null ? "—" : h.hold + "d"}`; },
+    },
+    series: [{
+      type: "treemap", roam: false, nodeClick: false, breadcrumb: { show: false }, left: 0, right: 0, top: 0, bottom: 0, squareRatio: 0.9,
+      upperLabel: { show: true, height: 20, formatter: "{b}", color: css("--muted"), fontSize: 11, fontFamily: "Geist, sans-serif", padding: [0, 4] },
+      label: {
+        show: true, position: "inside", align: "center", verticalAlign: "middle",
+        formatter: (p) => { const h = p.data.h; if (!h) return `{t|CASH}\n{v|${(D.cash_w * 100).toFixed(1)}%}`; return `{t|${h.t}}\n{v|${pct(h[mapKey], mapKey === "day" ? 2 : 1)}}`; },
+        rich: { t: { fontFamily: "Geist, sans-serif", fontWeight: 600, fontSize: 15, lineHeight: 20 }, v: { fontFamily: "Geist Mono, monospace", fontSize: 11.5, lineHeight: 16 } },
+      },
+      levels: [
+        { itemStyle: { borderWidth: 0, gapWidth: 3 }, upperLabel: { show: false } },
+        { itemStyle: { borderColor: "#ffffff", borderWidth: 1, gapWidth: 2, color: "#ffffff" } },
+        { itemStyle: { borderColor: "#ffffff", borderWidth: 0, gapWidth: 2, borderRadius: 4 }, upperLabel: { show: false } },
+      ],
+      data,
+    }],
+  }, true);
+}
+$("mapmode").addEventListener("click", (e) => { const b = e.target.closest("button"); if (!b) return; mapKey = b.dataset.k; safeSet("pl-map", mapKey); pressed("mapmode", "k", mapKey); renderTreemap(); });
+
+let mview = safeGet("pl-mview") || "abs";
+function renderMonthly() {
+  const m = {}; D.monthly.forEach((x) => (m[x.y + "-" + x.m] = x));
+  const ys = [...new Set(D.monthly.map((x) => x.y))].reverse();
+  let h = `<thead><tr><th></th>${MON.map((s) => `<th>${s}</th>`).join("")}<th>Year</th></tr></thead><tbody>`;
+  ys.forEach((y) => {
+    h += `<tr><td class="yr">${y}</td>`;
+    for (let i = 1; i <= 12; i++) {
+      const x = m[y + "-" + i];
+      if (!x) { h += `<td class="empty">·</td>`; continue; }
+      const v = mview === "abs" ? x.r : x.r - x.spy; const c = heat(v, 0.08);
+      h += `<td style="background:${c.bg};color:${c.fg}" title="${MON[i - 1]} ${y} · ${esc(BL)} ${pct(x.spy, 1)}">${pct(v, 1)}</td>`;
+    }
+    const a = D.annual.find((z) => z.y === y); const av = mview === "abs" ? a.r : a.r - a.spy; const c = heat(av, 0.3);
+    h += `<td class="tot" style="background:${c.bg};color:${c.fg}">${pct(av, 1)}</td></tr>`;
+  });
+  $("mtab").innerHTML = h + "</tbody>";
+}
+$("mview").addEventListener("click", (e) => { const b = e.target.closest("button"); if (!b) return; mview = b.dataset.v; safeSet("pl-mview", mview); pressed("mview", "v", mview); renderMonthly(); });
+
+let cal;
+const BUCKETS = [-0.03, -0.015, -0.005, 0.005, 0.015, 0.03];
+const BV = [-0.04, -0.022, -0.01, 0, 0.01, 0.022, 0.04];
+const bucketColor = (i) => (i === 3 ? "#ebe8e0" : heat(BV[i], 0.04).bg);
+const years = [...new Set(SER.map((r) => r[0].slice(0, 4)))];
+let calYear = safeGet("pl-year"); if (!years.includes(calYear)) calYear = years[years.length - 1];
+$("years").innerHTML = years.map((y) => `<button type="button" data-y="${y}" aria-pressed="${y === calYear}">${y}</button>`).join("");
+$("years").addEventListener("click", (e) => { const b = e.target.closest("button"); if (!b) return; calYear = b.dataset.y; safeSet("pl-year", calYear); pressed("years", "y", calYear); renderCalendar(); });
+function renderCalendar() {
+  if (!window.echarts) return;
+  const box = $("calendar");
+  const avail = box.parentElement.clientWidth;
+  const cell = Math.max(11, Math.min(14, Math.floor((avail - 30) / 54)));
+  box.style.width = (30 + cell * 54) + "px"; box.style.height = (cell * 7 + 30) + "px";
+  if (cal) cal.dispose();
+  cal = echarts.init(box, null, { renderer: "canvas" });
+  const rows = SER.filter((r) => r[0].startsWith(calYear)).map((r) => [r[0], r[5]]);
+  const pieces = [{ lt: BUCKETS[0], color: bucketColor(0) }];
+  for (let i = 1; i < BUCKETS.length; i++) pieces.push({ gte: BUCKETS[i - 1], lt: BUCKETS[i], color: bucketColor(i) });
+  pieces.push({ gte: BUCKETS[5], color: bucketColor(6) });
+  cal.setOption({
+    animation: false,
+    tooltip: { backgroundColor: "#ffffff", borderColor: css("--rule-2"), textStyle: { color: css("--ink"), fontSize: 12, fontFamily: "Geist, sans-serif" }, extraCssText: "box-shadow:0 6px 20px rgba(17,21,34,.08);border-radius:8px;",
+      formatter: (p) => { const tr = tradesByDate[p.value[0]]; return `${p.value[0]} · <b>${pct(p.value[1], 2)}</b>` + (tr ? "<br>" + tr.map((j) => (j.side === "BUY" ? "Bought " : "Sold ") + j.ticker).join(", ") : ""); } },
+    visualMap: { show: false, type: "piecewise", pieces, dimension: 1 },
+    calendar: {
+      top: 20, left: 22, right: 4, bottom: 2, cellSize: [cell, cell], range: calYear,
+      itemStyle: { color: "#f6f4ef", borderColor: "#ffffff", borderWidth: 2 },
+      splitLine: { show: false }, yearLabel: { show: false },
+      dayLabel: { firstDay: 1, nameMap: ["S", "M", "T", "W", "T", "F", "S"], color: css("--faint"), fontSize: 9.5, margin: 5, fontFamily: "Geist Mono, monospace" },
+      monthLabel: { nameMap: "EN", color: css("--muted"), fontSize: 10, margin: 5, fontFamily: "Geist Mono, monospace" },
+    },
+    series: [{ type: "heatmap", coordinateSystem: "calendar", data: rows, itemStyle: { borderRadius: 2 } }],
+  });
+  const rs = rows.map((r) => r[1]); let bi = 0, wi = 0;
+  rs.forEach((v, i) => { if (v > rs[bi]) bi = i; if (v < rs[wi]) wi = i; });
+  $("cal-stats").innerHTML = `<span>Trading days <b>${rs.length}</b></span><span>Up days <b>${Math.round(rs.filter((v) => v > 0).length / rs.length * 100)}%</b></span><span>Best <b class="up">${pct(rs[bi], 2)}</b></span><span>Worst <b class="down">${pct(rs[wi], 2)}</b></span>`;
+  $("scale").innerHTML = `−3%` + [0, 1, 2, 3, 4, 5, 6].map((i) => `<i style="background:${bucketColor(i)}"></i>`).join("") + `+3%`;
+}
+
+let jf = "all", jAll = false;
+const ALLJ = [...D.journal.map((j) => ({ ...j, kind: "trade" })), ...D.flows.map((f) => ({ ...f, kind: "flow" }))].sort((a, b) => (a.date < b.date ? 1 : a.date > b.date ? -1 : 0));
+const recJSON = (r) => { const { sha256, kind, proof, ...rest } = r; return esc(JSON.stringify(rest, null, 2)); };
+function renderJournal() {
+  const list = ALLJ.filter((r) => (jf === "all" ? true : jf === "flow" ? r.kind === "flow" : r.side === jf));
+  const shown = jAll ? list : list.slice(0, 10);
+  $("journal").innerHTML = shown.map((r) => {
+    let sec, dir, size, res;
+    if (r.kind === "flow") {
+      sec = `<span class="tk">USD</span><span class="nm">${r.type === "deposit" ? "Deposit" : "Withdrawal"}</span>`;
+      dir = `<span class="side flat">${r.type === "deposit" ? "DEPOSIT" : "WITHDRAW"}</span>`; size = `<span class="flat">hidden</span>`; res = `<span class="flat">No NAV impact</span>`;
+    } else {
+      sec = `<span class="tk">${r.ticker}</span><span class="nm hide-s">${esc(nameOf(r))}</span>`;
+      dir = `<span class="side ${r.side === "BUY" ? "up" : "down"}">${r.side}</span>`;
+      size = r.pct_nav == null ? "—" : (r.pct_nav * 100).toFixed(1) + "%";
+      res = r.side === "SELL" ? `<span class="${cls(r.pnl_pct || 0)}">${pctN(r.pnl_pct, 1)}</span><span style="color:var(--faint)"> · ${r.hold_days}d</span>` : `<span class="flat">@ ${fmt(r.price)}</span>`;
+    }
+    return `<tr class="jrow" tabindex="0" aria-expanded="false"><td class="mono" style="color:var(--muted)">${r.date}</td><td>${sec}</td><td>${dir}</td><td class="r mono">${size}</td><td class="r mono">${res}</td><td class="hide-s"><div class="jnote">${esc(r.note)}</div></td></tr>
+      <tr class="jdet" hidden><td colspan="6">${r.note ? `<div class="full">${esc(r.note)}</div>` : ""}<pre>${recJSON(r)}</pre>
+      <div class="hashline"><span>SHA-256 <code>${r.sha256}</code></span><span class="tag">${proofTag(r.proof)}</span><button type="button" class="btn copy" data-h="${r.sha256}">Copy hash</button></div></td></tr>`;
+  }).join("");
+  $("more-btn").textContent = jAll ? "Show less" : `Show all ${list.length}`;
+  $("more-btn").hidden = list.length <= 10;
+}
+$("journal").addEventListener("click", (e) => {
+  const cp = e.target.closest(".copy");
+  if (cp) {
+    const done = () => { cp.textContent = "Copied"; setTimeout(() => (cp.textContent = "Copy hash"), 1500); };
+    const fb = () => { const c = cp.parentElement.querySelector("code"); const rg = document.createRange(); rg.selectNodeContents(c); const s = getSelection(); s.removeAllRanges(); s.addRange(rg); cp.textContent = "Selected"; };
+    try { navigator.clipboard.writeText(cp.dataset.h).then(done, fb); } catch (err) { fb(); }
+    return;
+  }
+  const row = e.target.closest(".jrow"); if (row) toggleRow(row);
+});
+$("journal").addEventListener("keydown", (e) => { const row = e.target.closest(".jrow"); if (row && (e.key === "Enter" || e.key === " ")) { e.preventDefault(); toggleRow(row); } });
+function toggleRow(row) { const open = row.getAttribute("aria-expanded") === "true"; row.setAttribute("aria-expanded", String(!open)); row.nextElementSibling.hidden = open; }
+$("jfilter").addEventListener("click", (e) => { const b = e.target.closest("button"); if (!b) return; jf = b.dataset.f; pressed("jfilter", "f", jf); renderJournal(); });
+$("more-btn").addEventListener("click", () => { jAll = !jAll; renderJournal(); });
+
+function renderStats() {
+  const rows = [
+    ["Total return", `<span class="${cls(ST.total)}">${pct(ST.total)}</span><small>(${pct(ST.spy_total)})</small>`],
+    ["Year to date", `<span class="${cls(ST.ytd)}">${pct(ST.ytd)}</span><small>(${pct(ST.spy_ytd)})</small>`],
+    ["Volatility (ann.)", `${num(ST.vol * 100, 1)}%<small>(${num(ST.spy_vol * 100, 1)}%)</small>`],
+    ["Sortino ratio", num(ST.sortino)],
+    ["Calmar ratio", num(ST.calmar)],
+    ["Beta / correlation", `${num(ST.beta)} / ${num(ST.corr)}`],
+    ["Max drawdown period", `${ST.dd_peak} → ${ST.dd_trough}`],
+    ["Recovered on", ST.dd_recovered || "Not yet"],
+    ["Best / worst day", `<span class="up">${pct(ST.best_day, 1)}</span> / <span class="down">${pct(ST.worst_day, 1)}</span>`],
+    ["Profit factor", num(ST.profit_factor)],
+    ["Avg win / loss", `<span class="up">${pctN(ST.avg_win, 0)}</span> / <span class="down">${pctN(ST.avg_loss, 0)}</span>`],
+    ["Avg holding period", ST.avg_hold == null ? "—" : Math.round(ST.avg_hold) + " days"],
+  ];
+  $("stats").innerHTML = rows.map(([a, b]) => `<div><dt>${a}</dt><dd>${b}</dd></div>`).join("");
+}
+
+if (D.genesis) {
+  $("g-date").textContent = D.genesis.date;
+  $("g-decl").textContent = D.genesis.declaration + "." + (D.genesis.statement ? " " + D.genesis.statement + "." : "") + (D.genesis.account ? ` Account ${D.genesis.account}.` : "");
+  $("g-hash").textContent = D.genesis.sha256;
+  $("g-tag").textContent = proofTag(D.genesis.proof);
+} else $("g-row").hidden = true;
+if (D.snapshot) {
+  $("s-date").textContent = D.snapshot.date;
+  $("s-hash").textContent = D.snapshot.sha256;
+  $("s-tag").textContent = proofTag(D.snapshot.proof);
+} else $("s-row").hidden = true;
+
+function applyConv(c) {
+  safeSet("pl-conv", c);
+  if (c === "cn") document.documentElement.setAttribute("data-conv", "cn"); else document.documentElement.removeAttribute("data-conv");
+  pressed("conv", "c", c);
+}
+$("conv").addEventListener("click", (e) => {
+  const b = e.target.closest("button"); if (!b) return; applyConv(b.dataset.c);
+  renderKpis(); renderHoldings(); renderMonthly(); renderStats(); renderJournal(); renderTreemap(); renderCalendar();
+  if (navS) { navS.setMarkers(markers()); setLegend(N - 1); }
+});
+
+applyConv(safeGet("pl-conv") || "us");
+pressed("mapmode", "k", mapKey); pressed("mview", "v", mview);
+$("marks-btn").setAttribute("aria-pressed", String(showMarks));
+renderKpis(); renderHoldings(); renderMonthly(); renderStats(); renderJournal();
+if (LW) buildChart(); else $("main-chart").innerHTML = '<p style="color:var(--muted);padding:20px">The chart library did not load. Refresh the page to try again.</p>';
+renderTreemap(); renderCalendar();
+let rz; window.addEventListener("resize", () => { clearTimeout(rz); rz = setTimeout(() => { if (tm) tm.resize(); renderCalendar(); }, 150); });
+}
+</script>
+</body>
+</html>
