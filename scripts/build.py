@@ -42,7 +42,7 @@ def config() -> dict:
 
 
 # ---------------------------------------------------------------- ledger
-EMPTY = {"nav": {}, "flows": [], "trades": [], "positions": {"date": None, "rows": []}, "account": {}}
+EMPTY = {"nav": {}, "flows": [], "trades": [], "corp_actions": [], "positions": {"date": None, "rows": []}, "account": {}}
 
 
 def load_ledger(pw) -> dict:
@@ -69,6 +69,9 @@ def merge(L: dict, parsed: dict) -> dict:
     have = {t["id"] for t in L["trades"]}
     nt = [t for t in parsed["trades"] if t["id"] not in have]
     L["trades"] = sorted(L["trades"] + nt, key=lambda t: (t["date"], t.get("time", ""), t["id"]))
+    have = {c["id"] for c in L["corp_actions"]}
+    L["corp_actions"] = sorted(L["corp_actions"] + [c for c in parsed.get("corp_actions", []) if c["id"] not in have],
+                               key=lambda c: (c["date"] or "", c["id"]))
     if parsed["to"] and (L["positions"]["date"] or "") <= parsed["to"]:
         L["positions"] = {"date": parsed["to"], "rows": parsed["positions"]}
     if not L["account"] and parsed.get("account"):
@@ -192,7 +195,15 @@ def compute(cfg: dict, L: dict) -> dict | None:
     lots: dict[str, dict] = {}
     journal = []
     eq_prev = S.equity.shift(1).fillna(S.equity.iloc[0])
-    for t in sorted(trades, key=lambda t: (t["date"], t.get("time", ""), t["id"])):
+    # stock splits change share counts but not cost; apply them in date order alongside trades
+    splits = [c for c in L.get("corp_actions", []) if c["type"] in ("FS", "RS") and c["qty"]]
+    events = [("T", t["date"], t.get("time", ""), t) for t in trades] + [("S", c["date"], "", c) for c in splits]
+    for kind, _, _, t in sorted(events, key=lambda e: (e[1], e[0] == "T", e[2])):
+        if kind == "S":
+            lot = lots.get(t["ticker"])
+            if lot and lot["qty"] + t["qty"] > 0:
+                lot["qty"] += t["qty"]
+            continue
         d = pd.Timestamp(t["date"])
         if d < S.index[0]:
             continue
