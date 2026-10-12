@@ -29,7 +29,9 @@ RETRY_CODES = {"1001", "1004", "1005", "1006", "1007", "1008", "1009", "1019", "
 
 
 class FlexError(RuntimeError):
-    pass
+    def __init__(self, msg: str, code: str | None = None):
+        super().__init__(msg)
+        self.code = code
 
 
 def fetch(token: str, query_id: str, tries: int = 12, wait: int = 10) -> bytes:
@@ -37,7 +39,7 @@ def fetch(token: str, query_id: str, tries: int = 12, wait: int = 10) -> bytes:
     r.raise_for_status()
     root = ET.fromstring(r.content)
     if root.findtext("Status") != "Success":
-        raise FlexError(f"SendRequest failed: {root.findtext('ErrorCode')} {root.findtext('ErrorMessage')}")
+        raise FlexError(f"SendRequest failed: {root.findtext('ErrorCode')} {root.findtext('ErrorMessage')}", root.findtext("ErrorCode"))
     ref = root.findtext("ReferenceCode")
     url = root.findtext("Url") or f"{BASE}/GetStatement"
     for _ in range(tries):
@@ -50,8 +52,8 @@ def fetch(token: str, query_id: str, tries: int = 12, wait: int = 10) -> bytes:
         code = err.findtext("ErrorCode")
         if code in RETRY_CODES:  # generation in progress, server busy, data not ready yet
             continue
-        raise FlexError(f"GetStatement failed: {code} {err.findtext('ErrorMessage')}")
-    raise FlexError("Statement was not ready after waiting; try again later")
+        raise FlexError(f"GetStatement failed: {code} {err.findtext('ErrorMessage')}", code)
+    raise FlexError("Statement was not ready after waiting; try again later", "timeout")
 
 
 def _date(s: str | None) -> str | None:
@@ -88,6 +90,8 @@ def parse(xml_bytes: bytes) -> dict:
         "flows": [],
         "trades": [],
         "positions": [],
+        # which report sections came back (names only, no values) for diagnosing the Flex Query setup
+        "sections": sorted({c.tag for c in stmt}),
     }
     for e in stmt.iter("EquitySummaryByReportDateInBase"):
         d = _date(e.get("reportDate"))
