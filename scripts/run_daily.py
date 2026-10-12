@@ -40,7 +40,14 @@ def main() -> int:
     if args.xml:
         raw = Path(args.xml).read_bytes()
     elif os.environ.get("IBKR_FLEX_TOKEN") and os.environ.get("IBKR_FLEX_QUERY_ID"):
-        raw = flex.fetch(os.environ["IBKR_FLEX_TOKEN"], os.environ["IBKR_FLEX_QUERY_ID"])
+        try:
+            raw = flex.fetch(os.environ["IBKR_FLEX_TOKEN"], os.environ["IBKR_FLEX_QUERY_ID"])
+        except flex.FlexError as e:
+            # 1003 = statement not available yet (new or unfunded account); "timeout" = IBKR still generating.
+            # Anything else (bad token, wrong query ID, expired token) should fail loudly.
+            if e.code not in ("1003", "timeout"):
+                raise
+            print(f"IBKR report not available yet ({e}); will try again next run.")
     else:
         print("No IBKR credentials yet; keeping the demo page.")
 
@@ -48,8 +55,18 @@ def main() -> int:
     statement_sha = None
     new_dates: list[str] = []
     if raw:
-        statement_sha = hashlib.sha256(raw).hexdigest()
         parsed = flex.parse(raw)
+        print("Report sections:", ", ".join(parsed["sections"]) or "none")
+        needed = {"EquitySummaryInBase", "CashTransactions", "Trades", "OpenPositions"}
+        missing = needed - set(parsed["sections"])
+        if missing:
+            print("::warning::Flex Query is missing sections: " + ", ".join(sorted(missing)) + ". See docs/SETUP.zh.md step 3a.")
+        funded = any(v for v in parsed["nav"].values()) or parsed["trades"] or parsed["flows"]
+        if not funded:
+            print("Account has no funds or activity yet; nothing to record. The demo page stays up.")
+            raw = None
+    if raw:
+        statement_sha = hashlib.sha256(raw).hexdigest()
         stamp = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H%M%SZ")
         vault.write(ROOT / "data" / "raw" / f"flex-{parsed['to'] or 'unknown'}-{stamp}.xml", raw, pw)
         res = build.merge(L, parsed)
