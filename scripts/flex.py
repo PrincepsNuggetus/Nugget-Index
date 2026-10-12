@@ -90,6 +90,7 @@ def parse(xml_bytes: bytes) -> dict:
         "flows": [],
         "trades": [],
         "positions": [],
+        "corp_actions": [],
         # which report sections came back (names only, no values) for diagnosing the Flex Query setup
         "sections": sorted({c.tag for c in stmt}),
     }
@@ -127,6 +128,17 @@ def parse(xml_bytes: bytes) -> dict:
             "price": _f(e.get("tradePrice")),
             "fee": abs(_f(e.get("ibCommission"))) + abs(_f(e.get("taxes"))),
             "currency": e.get("currency", "USD"),
+        })
+    for e in stmt.iter("CorporateAction"):
+        if e.get("levelOfDetail", "DETAIL").upper() not in ("DETAIL", ""):
+            continue
+        out["corp_actions"].append({
+            "id": e.get("actionID") or e.get("transactionID") or f"{e.get('reportDate')}:{e.get('symbol')}:{e.get('quantity')}",
+            "date": _date(e.get("reportDate") or e.get("dateTime")),
+            "ticker": e.get("symbol"),
+            "type": (e.get("type") or "").upper(),  # FS = forward split, RS = reverse split, ...
+            "qty": _f(e.get("quantity")),
+            "description": e.get("description", ""),
         })
     for e in stmt.iter("OpenPosition"):
         if e.get("levelOfDetail", "SUMMARY").upper() not in ("SUMMARY", ""):
