@@ -141,6 +141,11 @@ def parse(xml_bytes: bytes) -> dict:
             "upnl": _f(e.get("fifoPnlUnrealized")),
             "date": _date(e.get("reportDate")),
         })
+    # With "Breakout by Day" on, Open Positions repeats for every day in the period.
+    # Keep only the latest day's rows as the current holdings.
+    if out["positions"]:
+        latest = max(p["date"] or "" for p in out["positions"])
+        out["positions"] = [p for p in out["positions"] if (p["date"] or "") == latest]
     return out
 
 
