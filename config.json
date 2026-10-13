@@ -2,6 +2,7 @@
   "name": "Nugget Index",
   "byline": "Tracked from every trade in a *live IBKR account*.",
   "base": 1000,
+  "start": "first_trade",
   "inception": null,
   "benchmark": "SPY",
   "benchmark_label": "S&P 500",

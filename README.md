@@ -17,7 +17,7 @@ Dollar amounts are never published, only percentages.
 
 The index is **time-weighted**: deposits and withdrawals buy or redeem units at the previous close, so adding or removing money never moves the index. Daily account equity comes directly from IBKR's "Net Asset Value in Base" report.
 
-`index value = account equity / units outstanding`, starting at 1,000 on the first day.
+`index value = account equity / units outstanding`. The record starts with the first trade: the index is set to 1,000 at the close of the last trading day before it, so the first trade's day counts in full. Days when the account held only cash before any trade are not part of the record.
 
 ## How it stays honest
 

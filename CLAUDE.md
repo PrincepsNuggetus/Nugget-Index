@@ -10,6 +10,19 @@ This repo publishes the owner's live IBKR track record as a web page. The owner 
 - `scripts/vault.py` encrypts the ledger and raw reports with `NUGGET_DATA_KEY` (scrypt + AES-256-GCM). The repo is public, so plaintext account data must never be committed.
 - `site/index.html` loads `site/data.json`. Until IBKR is connected, `site/data.json` is demo data (`"demo": true`).
 
+## When the record starts
+
+`config.json` → `"start": "first_trade"`: nothing is stored or published while the account is funded but has no trades. On the first run after the first trade, the index is set to 1,000 at the close of the last funded trading day before that trade (`build.inception_date`), the genesis record is written with that date, and daily records begin. A fixed `"inception": "YYYY-MM-DD"` overrides this.
+
+## When the daily run stops
+
+`run_daily.py` checks the numbers before writing anything and exits with an error (GitHub emails the owner) when:
+
+- **inception**: equity on the inception day is not explained by booked deposits, typically IBKR's instant credit or a deposit still processing. Later, when the deposit is booked, it would look like a loss.
+- **a flow day**: the index moved more than 2 percentage points away from the benchmark on a day with a deposit or withdrawal.
+
+Nothing is committed on a stopped run. To fix: look at the decrypted ledger (`NUGGET_DATA_KEY` is a secret; ask the owner to run `python scripts/vault.py data/ledger.json` locally, or reason from the error), then either set `"flow_overrides": {"YYYY-MM-DD": amount}` in `config.json` to book the flow on the day the money actually entered equity, or, if the move is real, add the date (or `"inception"`) to `"acknowledged": [...]`. Explain the change to the owner in Chinese before pushing.
+
 ## Rules
 
 - **Never edit, rename or delete anything in `data/records/`** (records and `.ots` proofs). New information goes into new records.
