@@ -80,6 +80,32 @@ def merge(L: dict, parsed: dict) -> dict:
     return {"days": len(new_days), "flows": len(nf), "trades": len(nt), "new_dates": new_days}
 
 
+# ---------------------------------------------------------------- inception
+def starts_at_first_trade(cfg: dict) -> bool:
+    return not cfg.get("inception") and cfg.get("start", "first_trade") == "first_trade"
+
+
+def inception_date(cfg: dict, L: dict) -> str | None:
+    """The day the index is set to 1,000.
+
+    A fixed date in config.json wins. Otherwise (start = "first_trade") it is the close of the
+    last funded trading day before the first trade, so the first trade day's result counts.
+    If the account was funded the same day as the first trade, it is that day's close.
+    """
+    if cfg.get("inception"):
+        return cfg["inception"]
+    funded = sorted(d for d, v in L["nav"].items() if v)
+    if not funded:
+        return None
+    if cfg.get("start", "first_trade") != "first_trade":
+        return funded[0]
+    if not L["trades"]:
+        return None
+    first_trade = min(t["date"] for t in L["trades"])
+    before = [d for d in funded if d < first_trade]
+    return before[-1] if before else first_trade
+
+
 # ---------------------------------------------------------------- helpers
 def benchmark(ticker: str, start: str, end: str) -> pd.Series:
     import yfinance as yf
@@ -146,18 +172,21 @@ def compute(cfg: dict, L: dict) -> dict | None:
     notes = load_json(ROOT / "data" / "notes.json", {})
     base = float(cfg.get("base", 1000))
 
+    inception = inception_date(cfg, L)
+    if not inception:
+        return None
     eq = pd.Series(nav_raw, dtype=float)
     eq.index = pd.to_datetime(eq.index)
-    eq = eq.sort_index()
-    inception = cfg.get("inception")
-    if inception:
-        eq = eq.loc[inception:]
+    eq = eq.sort_index().loc[inception:]
     eq = eq[eq.cumsum() > 0]  # drop leading zero-equity days before the first deposit
     flow_by_day: dict[pd.Timestamp, float] = {}
     for f in flows:
         d = pd.Timestamp(f["date"])
         if d >= eq.index[0]:
             flow_by_day[d] = flow_by_day.get(d, 0.0) + f["amount"]
+    # manual corrections for deposits IBKR booked on a different day than the money showed up in equity
+    for d, amt in (cfg.get("flow_overrides") or {}).items():
+        flow_by_day[pd.Timestamp(d)] = float(amt)
 
     units, prev_nav, navs = 0.0, base, []
     for d, e in eq.items():
@@ -190,6 +219,21 @@ def compute(cfg: dict, L: dict) -> dict | None:
     S["spyret"] = S.spy.pct_change().fillna(0)
     S["dd"] = S.nav / S.nav.cummax() - 1
     S["spydd"] = S.spy / S.spy.cummax() - 1
+    # Sanity checks. Issues stop the daily run before anything is written or published.
+    # Messages use percentages only: Actions logs of a public repo are public.
+    ack = set(cfg.get("acknowledged") or [])
+    issues, warnings = [], []
+    booked = sum(f["amount"] for f in flows if f["date"] <= inception)
+    eq0 = float(S.equity.iloc[0])
+    if "inception" not in ack and eq0 > 0 and (eq0 - booked) > max(0.01 * eq0, 50):
+        issues.append(f"inception: {(eq0 - booked) / eq0:.0%} of the account's equity on {inception} is not explained by booked deposits "
+                      "(an instant credit or a deposit still processing). When that deposit is booked later it would show up as a fake loss.")
+    for d in sorted(flow_by_day):
+        if d in S.index and d != S.index[0]:
+            gap = S.ret.loc[d] - S.spyret.loc[d]
+            if abs(gap) > 0.02 and str(d.date()) not in ack:
+                issues.append(f"{d.date()}: the index moved {S.ret.loc[d]:+.1%} (benchmark {S.spyret.loc[d]:+.1%}) on a day with a deposit or withdrawal. "
+                              "The cash flow and the equity change may have been booked on different days.")
 
     # trade journal with average-cost P&L and holding days
     lots: dict[str, dict] = {}
@@ -339,6 +383,8 @@ def compute(cfg: dict, L: dict) -> dict | None:
         "snapshot": ({"date": last_day, "file": last_rec, "sha256": file_sha(RECORDS / last_rec), "proof": proofs.get(last_rec, {"status": "none"})} if last_rec else None),
         "trade_delay_days": delay,
         "repo": cfg.get("repo_url", ""),
+        "warnings": warnings,
+        "issues": issues,
     }
 
 
@@ -356,10 +402,15 @@ def write_records(cfg: dict, L: dict, statement_sha: str | None, new_dates: list
     RECORDS.mkdir(parents=True, exist_ok=True)
     out = []
     nav_raw, trades, flows, positions, acct = L["nav"], L["trades"], L["flows"], L["positions"], L["account"]
+    inception = inception_date(cfg, L)
+    if not inception:
+        return out
+    new_dates = [d for d in new_dates if d >= inception]
     g = RECORDS / "genesis.json"
-    if not g.exists() and nav_raw:
-        first = cfg.get("inception") or min(d for d, v in nav_raw.items() if v)
+    if not g.exists():
+        first = inception
         rec = {"type": "account_lock", "broker": "Interactive Brokers", "account": acct.get("masked", ""), "date": first,
+               "first_trade": min(t["date"] for t in trades) if trades else None,
                "declaration": "Every trade, deposit and withdrawal in this account from this date on is part of the public record",
                "statement_sha256": statement_sha,
                "written_at": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")}

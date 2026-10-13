@@ -65,6 +65,11 @@ def main() -> int:
         if not funded:
             print("Account has no funds or activity yet; nothing to record. The demo page stays up.")
             raw = None
+        elif build.starts_at_first_trade(cfg) and not (L["trades"] or parsed["trades"]):
+            # Performance starts at the first trade. Until then nothing is stored or published;
+            # the 365-day report will still contain these days once the first trade happens.
+            print("Account is funded but has no trades yet. The record starts at the first trade; nothing published.")
+            raw = None
     if raw:
         statement_sha = hashlib.sha256(raw).hexdigest()
         stamp = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H%M%SZ")
@@ -74,6 +79,14 @@ def main() -> int:
         print(f"IBKR report {parsed['from']}..{parsed['to']}: +{res['days']} days, +{res['trades']} trades, +{res['flows']} cash flows")
         build.save_ledger(L, pw)
 
+    # Check the numbers before anything is written or published.
+    pre = build.compute(cfg, L)
+    if pre and pre.get("issues"):
+        for i in pre["issues"]:
+            print("::error::" + i)
+        print("Stopped before writing records or updating the page. See CLAUDE.md, 'When the daily run stops'.")
+        return 1
+
     written = build.write_records(cfg, L, statement_sha, new_dates) if L["nav"] else []
     if written:
         print(f"Wrote {len(written)} record(s)")
@@ -82,6 +95,9 @@ def main() -> int:
 
     data = build.compute(cfg, L)
     if data:
+        data.pop("issues", None)
+        for w in data.pop("warnings", []):
+            print("::warning::" + w)
         (ROOT / "site" / "data.json").write_text(json.dumps(data, separators=(",", ":"), default=float))
         print(f"Built site/data.json: NAV {data['series'][-1][1]:.2f} as of {data['asof']}")
     return 0
