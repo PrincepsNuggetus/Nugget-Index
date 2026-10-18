@@ -7,8 +7,8 @@ downloads reports; it cannot trade.
 Parsing reads the sections this project needs from the Activity Flex Query:
   - Net Asset Value (NAV) in Base -> <EquitySummaryByReportDateInBase reportDate total>
   - Cash Transactions             -> <CashTransaction type="Deposits/Withdrawals" ...>
-  - Trades                        -> <Trade ...>
-  - Open Positions                -> <OpenPosition ...>
+  - Trades                        -> <Trade ...>          (stocks, ETFs, funds and options)
+  - Open Positions                -> <OpenPosition ...>   (options carry multiplier, strike, expiry, putCall)
 See docs/SETUP.zh.md for how the query is configured.
 """
 from __future__ import annotations
@@ -76,6 +76,23 @@ def _f(x, default=0.0) -> float:
         return default
 
 
+ASSETS = ("STK", "ETF", "FUND", "OPT")
+
+
+def _contract(e) -> dict:
+    """Asset class and, for options, the contract terms (needed for exposure if assigned)."""
+    asset = e.get("assetCategory", "STK") or "STK"
+    c = {"asset": asset, "mult": _f(e.get("multiplier"), 1.0) or 1.0}
+    if asset == "OPT":
+        c.update({
+            "und": e.get("underlyingSymbol") or (e.get("symbol") or "").split(" ")[0],
+            "pc": (e.get("putCall") or "").upper()[:1],
+            "strike": _f(e.get("strike")),
+            "expiry": _date(e.get("expiry")),
+        })
+    return c
+
+
 def parse(xml_bytes: bytes) -> dict:
     root = ET.fromstring(xml_bytes)
     stmt = root.find(".//FlexStatement")
@@ -114,7 +131,7 @@ def parse(xml_bytes: bytes) -> dict:
     for e in stmt.iter("Trade"):
         if e.get("levelOfDetail", "EXECUTION").upper() not in ("EXECUTION", "ORDER", ""):
             continue
-        if e.get("assetCategory", "STK") not in ("STK", "ETF", "FUND"):
+        if e.get("assetCategory", "STK") not in ASSETS:
             continue
         qty = _f(e.get("quantity"))
         out["trades"].append({
@@ -128,6 +145,7 @@ def parse(xml_bytes: bytes) -> dict:
             "price": _f(e.get("tradePrice")),
             "fee": abs(_f(e.get("ibCommission"))) + abs(_f(e.get("taxes"))),
             "currency": e.get("currency", "USD"),
+            **_contract(e),
         })
     for e in stmt.iter("CorporateAction"):
         if e.get("levelOfDetail", "DETAIL").upper() not in ("DETAIL", ""):
@@ -152,6 +170,7 @@ def parse(xml_bytes: bytes) -> dict:
             "cost": _f(e.get("costBasisMoney")),
             "upnl": _f(e.get("fifoPnlUnrealized")),
             "date": _date(e.get("reportDate")),
+            **_contract(e),
         })
     # With "Breakout by Day" on, Open Positions repeats for every day in the period.
     # Keep only the latest day's rows as the current holdings.
