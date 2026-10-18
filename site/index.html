@@ -430,7 +430,7 @@ function renderTreemap() {
   const bySec = {}; D.holdings.forEach((h) => (bySec[h.sector] = bySec[h.sector] || []).push(h));
   const data = Object.entries(bySec).map(([s, hs]) => ({
     name: s,
-    children: hs.map((h) => { const c = heat(h[mapKey], scale); return { name: h.t, value: h.w, h, itemStyle: { color: c.bg }, label: { color: c.fg } }; }),
+    children: hs.map((h) => { const c = heat(h[mapKey], scale); return { name: h.t, value: Math.abs(h.w), h, itemStyle: { color: c.bg }, label: { color: c.fg } }; }),
   }));
   data.push({ name: "Cash", children: [{ name: "CASH", value: D.cash_w, h: null, itemStyle: { color: css("--tint") }, label: { color: css("--muted") } }] });
   tm.setOption({
@@ -533,7 +533,7 @@ function renderJournal() {
       sec = `<span class="tk">${r.ticker}</span><span class="nm hide-s">${esc(nameOf(r))}</span>`;
       dir = `<span class="side ${r.side === "BUY" ? "up" : "down"}">${r.side}</span>`;
       size = r.pct_nav == null ? "—" : (r.pct_nav * 100).toFixed(1) + "%";
-      res = r.side === "SELL" ? `<span class="${cls(r.pnl_pct || 0)}">${pctN(r.pnl_pct, 1)}</span><span style="color:var(--faint)"> · ${r.hold_days}d</span>` : `<span class="flat">@ ${fmt(r.price)}</span>`;
+      res = r.pnl_pct != null ? `<span class="${cls(r.pnl_pct || 0)}">${pctN(r.pnl_pct, 1)}</span><span style="color:var(--faint)"> · ${r.hold_days}d</span>` : `<span class="flat">@ ${fmt(r.price)}</span>`;
     }
     return `<tr class="jrow" tabindex="0" aria-expanded="false"><td class="mono" style="color:var(--muted)">${r.date}</td><td>${sec}</td><td>${dir}</td><td class="r mono">${size}</td><td class="r mono">${res}</td><td class="hide-s"><div class="jnote">${esc(r.note)}</div></td></tr>
       <tr class="jdet" hidden><td colspan="6">${r.note ? `<div class="full">${esc(r.note)}</div>` : ""}<pre>${recJSON(r)}</pre>

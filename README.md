@@ -7,7 +7,7 @@ A live track record built from every trade in one Interactive Brokers account, p
 ## What the page shows
 
 - Index value since inception (base 1,000) against the S&P 500 (SPY, total return)
-- Holdings and weights, a holdings heatmap, monthly and daily returns
+- Holdings and weights (stocks and options, long and short), a holdings heatmap, monthly and daily returns
 - Every trade with its date, side, price, size as % of NAV and realized result
 - Risk and trading statistics, and the proof behind every record
 
