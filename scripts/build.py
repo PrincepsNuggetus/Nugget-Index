@@ -149,6 +149,39 @@ def day_change(tickers: list[str], asof: str) -> dict:
         return {}
 
 
+def label(x: dict) -> str:
+    """Display ticker. Options read as 'INSM Nov26 100P'; everything else keeps its symbol."""
+    if x.get("asset") == "OPT" and x.get("expiry"):
+        k = x.get("strike") or 0
+        return f"{x.get('und') or x.get('ticker')} {pd.Timestamp(x['expiry']).strftime('%b%y')} {k:g}{x.get('pc') or ''}"
+    return x.get("ticker") or ""
+
+
+def betas(tickers: list[str], asof: str, bench: str = "SPY") -> dict:
+    """One-year beta of weekly returns against the benchmark. Public prices only; empty on failure."""
+    tickers = sorted({t for t in tickers if t})
+    if not tickers:
+        return {}
+    try:
+        import yfinance as yf
+        start = (pd.Timestamp(asof) - timedelta(days=380)).strftime("%Y-%m-%d")
+        end = (pd.Timestamp(asof) + timedelta(days=1)).strftime("%Y-%m-%d")
+        px = yf.download(tickers + [bench], start=start, end=end, auto_adjust=True, progress=False)["Close"]
+        if isinstance(px, pd.Series):
+            return {}
+        wk = px.resample("W-FRI").last().pct_change().iloc[1:]
+        out = {}
+        for t in tickers:
+            if t not in wk:
+                continue
+            pair = wk[[t, bench]].dropna()
+            if len(pair) >= 30 and pair[bench].var() > 0:
+                out[t] = round(float(pair[t].cov(pair[bench]) / pair[bench].var()), 2)
+        return out
+    except Exception:
+        return {}
+
+
 def ots_status(record_path: Path) -> dict:
     """pending | confirmed (with block height) | none"""
     ots = record_path.with_suffix(record_path.suffix + ".ots")
@@ -245,36 +278,48 @@ def compute(cfg: dict, L: dict) -> dict | None:
     for kind, _, _, t in sorted(events, key=lambda e: (e[1], e[0] == "T", e[2])):
         if kind == "S":
             lot = lots.get(t["ticker"])
-            if lot and lot["qty"] + t["qty"] > 0:
+            if lot and lot["qty"] > 0 and lot["qty"] + t["qty"] > 0:
                 lot["qty"] += t["qty"]
             continue
         d = pd.Timestamp(t["date"])
         if d < S.index[0]:
             continue
         ref_eq = float(eq_prev.asof(d)) if d >= S.index[0] else float(S.equity.iloc[0])
-        val = t["qty"] * t["price"]
-        p = lots.get(t["ticker"], {"qty": 0.0, "cost": 0.0, "entry": d.toordinal()})
-        rec = {"id": t["id"], "date": t["date"], "side": t["side"], "ticker": t["ticker"], "name": (t.get("name") or "").title(), "price": round(t["price"], 4),
-               "pct_nav": round(val / ref_eq, 4) if ref_eq else None, "note": notes.get(str(t["id"])) or notes.get(f'{t["date"]} {t["ticker"]}', "")}
+        mult = float(t.get("mult") or 1.0)
+        val = t["qty"] * t["price"] * mult
+        key = label(t)
+        # Lots are signed: positive = long, negative = short (short stock, written options).
+        # cost is signed money: paid for longs (+), received for shorts (-), fees always add.
+        p = lots.get(key, {"qty": 0.0, "cost": 0.0, "entry": d.toordinal()})
+        rec = {"id": t["id"], "date": t["date"], "side": t["side"], "ticker": key, "name": (t.get("name") or "").title(), "price": round(t["price"], 4),
+               "pct_nav": round(val / ref_eq, 4) if ref_eq else None, "note": notes.get(str(t["id"])) or notes.get(f'{t["date"]} {t["ticker"]}', "") or notes.get(f'{t["date"]} {key}', "")}
+        if t.get("asset") == "OPT":
+            rec["asset"] = "OPT"
         if not cfg.get("hide_amounts", True):
             rec.update({"qty": t["qty"], "value": round(val, 2), "fee": round(t["fee"], 2)})
-        if t["side"] == "BUY":
-            if p["qty"] > 0:
-                p["entry"] = (p["entry"] * p["qty"] + d.toordinal() * t["qty"]) / (p["qty"] + t["qty"])
+        sign = 1.0 if t["side"] == "BUY" else -1.0
+        left = t["qty"]
+        if p["qty"] and (p["qty"] > 0) != (sign > 0):  # closes (part of) the open lot
+            q = min(left, abs(p["qty"]))
+            basis = p["cost"] * q / abs(p["qty"])
+            fee_part = t["fee"] * q / t["qty"] if t["qty"] else t["fee"]
+            pnl = -sign * q * t["price"] * mult - fee_part - basis
+            rec.update({"pnl_pct": round(pnl / abs(basis), 4) if basis else None, "hold_days": int(round(d.toordinal() - p["entry"]))})
+            rec["_pnl"] = pnl
+            p["cost"] -= basis
+            p["qty"] += sign * q
+            left -= q
+            if abs(p["qty"]) < 1e-9:
+                p = {"qty": 0.0, "cost": 0.0, "entry": d.toordinal()}
+        if left > 1e-9:  # opens or adds; a trade that flips the position opens the rest the other way
+            fee_part = t["fee"] * left / t["qty"] if t["qty"] else t["fee"]
+            if p["qty"]:
+                p["entry"] = (p["entry"] * abs(p["qty"]) + d.toordinal() * left) / (abs(p["qty"]) + left)
             else:
                 p["entry"] = d.toordinal()
-            p["qty"] += t["qty"]
-            p["cost"] += val + t["fee"]
-        else:
-            q = min(t["qty"], p["qty"]) if p["qty"] else t["qty"]
-            basis = p["cost"] * q / p["qty"] if p["qty"] else val
-            pnl = val - t["fee"] - basis
-            rec.update({"pnl_pct": round(pnl / basis, 4) if basis else None, "hold_days": int(round(d.toordinal() - p["entry"]))})
-            rec["_pnl"] = pnl
-            if p["qty"]:
-                p["cost"] -= basis
-                p["qty"] -= q
-        lots[t["ticker"]] = p
+            p["qty"] += sign * left
+            p["cost"] += sign * left * t["price"] * mult + fee_part
+        lots[key] = p
         rec["sha256"] = sha({k: v for k, v in rec.items() if not k.startswith("_")})
         journal.append(rec)
 
@@ -291,7 +336,7 @@ def compute(cfg: dict, L: dict) -> dict | None:
     peak = S.nav.loc[:trough].idxmax()
     after = S.nav.loc[trough:]
     rec_d = after[after >= S.nav.loc[peak]]
-    sells = [j for j in journal if j["side"] == "SELL" and j.get("pnl_pct") is not None]
+    sells = [j for j in journal if "_pnl" in j and j.get("pnl_pct") is not None]  # closing trades, long or short
     wins = [j for j in sells if j["_pnl"] > 0]
     losses = [j for j in sells if j["_pnl"] <= 0]
     prev_year = S[S.index.year < S.index[-1].year]
@@ -338,17 +383,38 @@ def compute(cfg: dict, L: dict) -> dict | None:
 
     rows = [p for p in positions["rows"] if p["qty"]]
     eq_last = float(S.equity.iloc[-1])
-    sectors = sector_of([p["ticker"] for p in rows])
-    chg = day_change([p["ticker"] for p in rows], str(S.index[-1].date()))
+    und_of = {id(p): (p.get("und") or p["ticker"]) if p.get("asset") == "OPT" else p["ticker"] for p in rows}
+    unds = sorted(set(und_of.values()))
+    sectors = sector_of(unds)
+    chg = day_change([p["ticker"] for p in rows if p.get("asset") != "OPT"], str(S.index[-1].date()))
+    beta = betas(unds, str(S.index[-1].date()), cfg.get("benchmark", "SPY"))
     holdings = []
     for p in rows:
-        lot = lots.get(p["ticker"])
-        holdings.append({"t": p["ticker"], "name": p["name"].title(), "sector": sectors.get(p["ticker"], "Other"),
-                         "w": p["value"] / eq_last if eq_last else 0, "upnl": (p["upnl"] / p["cost"]) if p["cost"] else 0,
-                         "day": chg.get(p["ticker"], 0.0), "hold": int(S.index[-1].toordinal() - lot["entry"]) if lot else None,
-                         "dir": "LONG" if p["qty"] > 0 else "SHORT"})
+        key = label(p)
+        lot = lots.get(key)
+        u = und_of[id(p)]
+        h = {"t": key, "name": p["name"].title(), "sector": sectors.get(u, "Other"),
+             "w": p["value"] / eq_last if eq_last else 0, "upnl": (p["upnl"] / abs(p["cost"])) if p["cost"] else 0,
+             "day": chg.get(p["ticker"], 0.0), "hold": int(S.index[-1].toordinal() - lot["entry"]) if lot else None,
+             "dir": "LONG" if p["qty"] > 0 else "SHORT", "asset": p.get("asset", "STK"), "beta": beta.get(u)}
+        if p.get("asset") == "OPT":
+            # what the contract controls at the strike, as a share of NAV (signed: written puts are negative)
+            notional = p["qty"] * float(p.get("mult") or 100) * float(p.get("strike") or 0)
+            h.update({"und": u, "pc": p.get("pc"), "k": p.get("strike"), "exp": p.get("expiry"),
+                      "notional_w": notional / eq_last if eq_last else 0})
+        holdings.append(h)
     holdings.sort(key=lambda h: -abs(h["w"]))
     cash_w = 1 - sum(h["w"] for h in holdings)
+    stk = [h for h in holdings if h["asset"] != "OPT"]
+    opt = [h for h in holdings if h["asset"] == "OPT"]
+    exposure = {
+        "long": sum(h["w"] for h in stk if h["w"] > 0), "short": sum(h["w"] for h in stk if h["w"] < 0),
+        "net": sum(h["w"] for h in stk),
+        "beta_net": sum(h["w"] * h["beta"] for h in stk if h["beta"] is not None),
+        "beta_missing": [h["t"] for h in stk if h["beta"] is None],
+        "opt_value": sum(h["w"] for h in opt),
+        "opt_notional": sum(h["notional_w"] for h in opt),
+    }
 
     for j in journal:
         j.pop("_pnl", None)
@@ -377,7 +443,7 @@ def compute(cfg: dict, L: dict) -> dict | None:
         "asof": last_day, "start": S.index[0].strftime("%Y-%m-%d"),
         "series": [[d.strftime("%Y-%m-%d"), round(n, 2), round(s, 2), round(a, 5), round(b, 5), round(x, 5)]
                    for d, n, s, a, b, x in zip(S.index, S.nav, S.spy, S.dd, S.spydd, S.ret)],
-        "stats": stats, "monthly": monthly, "annual": annual, "holdings": holdings, "cash_w": cash_w,
+        "stats": stats, "monthly": monthly, "annual": annual, "holdings": holdings, "cash_w": cash_w, "exposure": exposure,
         "journal": public_journal, "flows": flow_out,
         "genesis": ({**genesis, "sha256": file_sha(RECORDS / "genesis.json"), "proof": proofs.get("genesis.json", {"status": "none"})} if genesis else None),
         "snapshot": ({"date": last_day, "file": last_rec, "sha256": file_sha(RECORDS / last_rec), "proof": proofs.get(last_rec, {"status": "none"})} if last_rec else None),
