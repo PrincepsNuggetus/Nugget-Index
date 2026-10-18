@@ -5,8 +5,8 @@ This repo publishes the owner's live IBKR track record as a web page. The owner 
 ## How it works
 
 - `.github/workflows/daily.yml` runs `scripts/run_daily.py` every weekday night (07:23 UTC), commits new data, then deploys `site/` to GitHub Pages.
-- `scripts/flex.py` fetches the IBKR Flex report (secrets `IBKR_FLEX_TOKEN`, `IBKR_FLEX_QUERY_ID`) and parses NAV in Base, Cash Transactions, Trades and Open Positions.
-- `scripts/build.py` merges into the ledger, computes the unitized time-weighted NAV (base 1,000; flows buy/redeem units at the prior close), benchmark (yfinance SPY), stats, monthly/annual returns, holdings, the trade journal (average-cost P&L), writes records and runs OpenTimestamps.
+- `scripts/flex.py` fetches the IBKR Flex report (secrets `IBKR_FLEX_TOKEN`, `IBKR_FLEX_QUERY_ID`) and parses NAV in Base, Cash Transactions, Trades and Open Positions. Stocks, ETFs, funds and options are kept; options carry multiplier, strike, expiry and put/call.
+- `scripts/build.py` merges into the ledger, books trades into signed lots (short stock and written options are negative lots, so a cover or buy-back realises the result), computes the unitized time-weighted NAV (base 1,000; flows buy/redeem units at the prior close), benchmark (yfinance SPY), stats, monthly/annual returns, holdings, the trade journal (average-cost P&L), writes records and runs OpenTimestamps.
 - `scripts/vault.py` encrypts the ledger and raw reports with `NUGGET_DATA_KEY` (scrypt + AES-256-GCM). The repo is public, so plaintext account data must never be committed.
 - `site/index.html` loads `site/data.json`. Until IBKR is connected, `site/data.json` is demo data (`"demo": true`).
 
@@ -41,7 +41,13 @@ python tests/test_pipeline.py
 
 It processes `tests/sample_flex.xml` (fictional trades, real prices) offline and checks the NAV and that no amounts leak into `site/data.json`.
 
+`python tests/test_options.py` adds a short stock round trip and a written put to the same sample and checks the lots, the open put's exposure if assigned (`notional_w`) and that nothing leaks.
+
 To preview the page, serve `site/` over HTTP (`python -m http.server -d site`); `data.json` is fetched, so `file://` will not work.
+
+## What data.json carries for position management
+
+The owner's Investment vault (on his computer, not in this repo) reads `site/data.json` to size positions. Besides the page data it uses: `holdings[].asset` (STK / OPT), `holdings[].beta` (one-year weekly beta of the stock or the option's underlying against the benchmark, public prices), for options `und`, `pc`, `k`, `exp` and `notional_w` (contracts × multiplier × strike ÷ NAV, signed), and `exposure` (long, short, net, beta-weighted net, option value and option notional, all as shares of NAV). Keep these keys stable. Position-sizing inputs (downside estimates, risk budgets, clusters) stay in the vault and never go into this public repo.
 
 ## Design
 
