@@ -37,6 +37,22 @@ def sha(obj) -> str:
     return hashlib.sha256(json.dumps(obj, sort_keys=True, ensure_ascii=False, separators=(",", ":")).encode()).hexdigest()
 
 
+SALT_SCHEME = ("salted-v2: each fingerprint is sha256 of canonical JSON {\"data\": ..., \"salt\": s}, where "
+               "s = HMAC-SHA256(owner key, \"nugget-record-salt|\" + date). Without the salt the values behind a "
+               "fingerprint cannot be guessed; the owner can reveal one day's salt (scripts/reveal_salt.py) to let "
+               "anyone check that day against the decrypted statement.")
+
+
+def record_salt(pw: str, date: str) -> str:
+    """Per-day secret salt for record fingerprints. Revealing one day's salt does not reveal any other day's."""
+    import hmac
+    return hmac.new(pw.encode(), f"nugget-record-salt|{date}".encode(), hashlib.sha256).hexdigest()
+
+
+def salted_sha(obj, salt: str) -> str:
+    return sha({"data": obj, "salt": salt})
+
+
 def config() -> dict:
     return load_json(ROOT / "config.json", {})
 
@@ -285,6 +301,10 @@ def compute(cfg: dict, L: dict) -> dict | None:
         if d < S.index[0]:
             continue
         ref_eq = float(eq_prev.asof(d)) if d >= S.index[0] else float(S.equity.iloc[0])
+        # Money that arrived the same day is part of what the trade is measured against.
+        ref_eq += flow_by_day.get(d, 0.0)
+        if ref_eq <= 0:
+            ref_eq = float(S.equity.asof(d))
         mult = float(t.get("mult") or 1.0)
         val = t["qty"] * t["price"] * mult
         key = label(t)
@@ -459,7 +479,7 @@ def file_sha(p: Path) -> str:
 
 
 # ---------------------------------------------------------------- records
-def write_records(cfg: dict, L: dict, statement_sha: str | None, new_dates: list[str]) -> list[Path]:
+def write_records(cfg: dict, L: dict, statement_sha: str | None, new_dates: list[str], pw: str | None = None) -> list[Path]:
     """Immutable records: a one-time genesis (account lock) and one record per run covering its new days.
 
     Records hold only fingerprints, so they are safe in a public repo. The data behind each
@@ -471,7 +491,17 @@ def write_records(cfg: dict, L: dict, statement_sha: str | None, new_dates: list
     inception = inception_date(cfg, L)
     if not inception:
         return out
-    new_dates = [d for d in new_dates if d >= inception]
+    # Days in the ledger that no record covers yet (for example after a record was withdrawn) are written again.
+    covered: set[str] = set()
+    for rp in RECORDS.glob("*.json"):
+        if rp.name == "genesis.json":
+            continue
+        try:
+            covered.update(json.loads(rp.read_text()).get("covers", []))
+        except Exception:
+            pass
+    backfill = [d for d in nav_raw if d >= inception and d not in covered]
+    new_dates = sorted({d for d in new_dates if d >= inception} | set(backfill))
     g = RECORDS / "genesis.json"
     if not g.exists():
         first = inception
@@ -482,6 +512,11 @@ def write_records(cfg: dict, L: dict, statement_sha: str | None, new_dates: list
                "written_at": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")}
         save_json(g, rec)
         out.append(g)
+    if new_dates and not pw:
+        # Unsalted fingerprints of small numbers (an account's equity) can be brute-forced, so without the key
+        # no per-day record is written.
+        print("::warning::NUGGET_DATA_KEY is not set; per-day records were not written.")
+        return out
     if new_dates:
         last = max(new_dates)
         p = RECORDS / f"{last}.json"
@@ -491,11 +526,12 @@ def write_records(cfg: dict, L: dict, statement_sha: str | None, new_dates: list
             n += 1
         rec = {
             "covers": sorted(new_dates),
-            "days": {d: {"equity_sha256": sha({"date": d, "equity": nav_raw.get(d)}),
+            "hash_scheme": SALT_SCHEME,
+            "days": {d: {"equity_sha256": salted_sha({"date": d, "equity": nav_raw.get(d)}, record_salt(pw, d)),
                          "trade_ids": sorted(str(t["id"]) for t in trades if t["date"] == d),
-                         "trades_sha256": sha([t for t in trades if t["date"] == d]),
-                         "flows_sha256": sha([f for f in flows if f["date"] == d])} for d in sorted(new_dates)},
-            "positions_sha256": sha(positions),
+                         "trades_sha256": salted_sha([t for t in trades if t["date"] == d], record_salt(pw, d)),
+                         "flows_sha256": salted_sha([f for f in flows if f["date"] == d], record_salt(pw, d))} for d in sorted(new_dates)},
+            "positions_sha256": salted_sha(positions, record_salt(pw, last)),
             "statement_sha256": statement_sha,
             "written_at": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
         }

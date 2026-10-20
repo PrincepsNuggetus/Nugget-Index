@@ -25,7 +25,8 @@ Nothing is committed on a stopped run. To fix: look at the decrypted ledger (`NU
 
 ## Rules
 
-- **Never edit, rename or delete anything in `data/records/`** (records and `.ots` proofs). New information goes into new records.
+- **Never edit, rename or delete anything in `data/records/`** (records and `.ots` proofs). New information goes into new records. Only the owner can withdraw a record (done once, for the unsalted 2026-10-19 record); `write_records` then covers its days again.
+- Per-day fingerprints are salted (`record_salt`, HMAC of the data key and the date). Never write an unsalted fingerprint of equity, trades, flows or positions: small numbers can be brute-forced. Without the key no per-day record is written.
 - **Never commit plaintext** `data/ledger.json` or `data/raw/*.xml`. `.gitignore` blocks them; keep it that way. `run_daily.py` refuses to store account data when `public_repo` is true and no key is set.
 - Never publish dollar amounts or share quantities on the page unless the owner turns off `hide_amounts` in `config.json`.
 - You cannot read the secrets. Never ask the owner to paste the IBKR token or the data key into chat; they go into GitHub secrets only.
