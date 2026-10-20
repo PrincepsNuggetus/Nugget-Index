@@ -95,22 +95,38 @@ def _contract(e) -> dict:
 
 def parse(xml_bytes: bytes) -> dict:
     root = ET.fromstring(xml_bytes)
-    stmt = root.find(".//FlexStatement")
-    if stmt is None:
+    # With "Breakout by Day" on, IBKR sends one <FlexStatement> per day; read all of them, not just the first.
+    stmts = root.findall(".//FlexStatement")
+    if not stmts:
         raise FlexError("No FlexStatement in report")
+    froms = [d for d in (_date(s.get("fromDate")) for s in stmts) if d]
+    tos = [d for d in (_date(s.get("toDate")) for s in stmts) if d]
     out = {
-        "account": stmt.get("accountId", ""),
-        "from": _date(stmt.get("fromDate")),
-        "to": _date(stmt.get("toDate")),
-        "generated": stmt.get("whenGenerated", ""),
+        "account": next((s.get("accountId") for s in stmts if s.get("accountId")), ""),
+        "from": min(froms) if froms else None,
+        "to": max(tos) if tos else None,
+        "generated": stmts[0].get("whenGenerated", ""),
+        "statements": len(stmts),
         "nav": {},
         "flows": [],
         "trades": [],
         "positions": [],
         "corp_actions": [],
         # which report sections came back (names only, no values) for diagnosing the Flex Query setup
-        "sections": sorted({c.tag for c in stmt}),
+        "sections": sorted({c.tag for s in stmts for c in s}),
     }
+    seen = {"flows": set(), "trades": set(), "corp_actions": set(), "positions": set()}
+    for stmt in stmts:
+        _parse_statement(stmt, out, seen)
+    # With "Breakout by Day" on, Open Positions repeats for every day in the period.
+    # Keep only the latest day's rows as the current holdings.
+    if out["positions"]:
+        latest = max(p["date"] or "" for p in out["positions"])
+        out["positions"] = [p for p in out["positions"] if (p["date"] or "") == latest]
+    return out
+
+
+def _parse_statement(stmt, out: dict, seen: dict) -> None:
     for e in stmt.iter("EquitySummaryByReportDateInBase"):
         d = _date(e.get("reportDate"))
         if d:
@@ -122,6 +138,10 @@ def parse(xml_bytes: bytes) -> dict:
         if e.get("levelOfDetail", "DETAIL").upper() not in ("DETAIL", ""):
             continue
         amt = _f(e.get("amount"))
+        fid = e.get("transactionID") or f"{e.get('dateTime')}:{amt}"
+        if fid in seen["flows"]:
+            continue
+        seen["flows"].add(fid)
         out["flows"].append({
             "id": e.get("transactionID") or f"{e.get('dateTime')}:{amt}",
             "date": _date(e.get("reportDate") or e.get("dateTime") or e.get("settleDate")),
@@ -134,6 +154,10 @@ def parse(xml_bytes: bytes) -> dict:
         if e.get("assetCategory", "STK") not in ASSETS:
             continue
         qty = _f(e.get("quantity"))
+        tid = e.get("tradeID") or e.get("ibExecID") or f"{e.get('dateTime')}:{e.get('symbol')}:{qty}"
+        if tid in seen["trades"]:
+            continue
+        seen["trades"].add(tid)
         out["trades"].append({
             "id": e.get("tradeID") or e.get("ibExecID") or f"{e.get('dateTime')}:{e.get('symbol')}:{qty}",
             "date": _date(e.get("tradeDate") or e.get("dateTime")),
@@ -150,6 +174,10 @@ def parse(xml_bytes: bytes) -> dict:
     for e in stmt.iter("CorporateAction"):
         if e.get("levelOfDetail", "DETAIL").upper() not in ("DETAIL", ""):
             continue
+        cid = e.get("actionID") or e.get("transactionID") or f"{e.get('reportDate')}:{e.get('symbol')}:{e.get('quantity')}"
+        if cid in seen["corp_actions"]:
+            continue
+        seen["corp_actions"].add(cid)
         out["corp_actions"].append({
             "id": e.get("actionID") or e.get("transactionID") or f"{e.get('reportDate')}:{e.get('symbol')}:{e.get('quantity')}",
             "date": _date(e.get("reportDate") or e.get("dateTime")),
@@ -161,6 +189,10 @@ def parse(xml_bytes: bytes) -> dict:
     for e in stmt.iter("OpenPosition"):
         if e.get("levelOfDetail", "SUMMARY").upper() not in ("SUMMARY", ""):
             continue
+        pkey = (e.get("reportDate"), e.get("conid") or e.get("symbol"), e.get("position"))
+        if pkey in seen["positions"]:
+            continue
+        seen["positions"].add(pkey)
         out["positions"].append({
             "ticker": e.get("symbol"),
             "name": e.get("description", ""),
@@ -172,12 +204,6 @@ def parse(xml_bytes: bytes) -> dict:
             "date": _date(e.get("reportDate")),
             **_contract(e),
         })
-    # With "Breakout by Day" on, Open Positions repeats for every day in the period.
-    # Keep only the latest day's rows as the current holdings.
-    if out["positions"]:
-        latest = max(p["date"] or "" for p in out["positions"])
-        out["positions"] = [p for p in out["positions"] if (p["date"] or "") == latest]
-    return out
 
 
 if __name__ == "__main__":
