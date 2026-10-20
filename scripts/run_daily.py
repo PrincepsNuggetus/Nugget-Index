@@ -100,7 +100,7 @@ def main() -> int:
         print("Stopped before writing records or updating the page. See CLAUDE.md, 'When the daily run stops'.")
         return 1
 
-    written = build.write_records(cfg, L, statement_sha, new_dates) if L["nav"] else []
+    written = build.write_records(cfg, L, statement_sha, new_dates, pw) if L["nav"] else []
     if written:
         print(f"Wrote {len(written)} record(s)")
     if not args.no_stamp:

@@ -22,7 +22,7 @@ The index is **time-weighted**: deposits and withdrawals buy or redeem units at 
 ## How it stays honest
 
 1. **Account lock.** `data/records/genesis.json` declares, on day one, that every trade, deposit and withdrawal in this account counts. Its fingerprint is timestamped, so the start date cannot be moved later and losing accounts cannot be swapped out.
-2. **Immutable daily records.** Each daily run writes a new file in `data/records/` holding SHA-256 fingerprints of that day's equity, trades, cash flows and the raw IBKR report. Records are never edited or deleted.
+2. **Immutable daily records.** Each daily run writes a new file in `data/records/` holding SHA-256 fingerprints of that day's equity, trades, cash flows and the raw IBKR report. Each day's fingerprints are salted with a secret derived from the owner's key (`hash_scheme` in the record), so they cannot be guessed by trying amounts; the owner can reveal one day's salt with `scripts/reveal_salt.py` to let anyone check that day. Records are never edited. The record first published for 2026-10-16 and 2026-10-19 used unsalted fingerprints and was withdrawn; those days are covered again by a salted record.
 3. **Bitcoin timestamps.** Every record is stamped with [OpenTimestamps](https://opentimestamps.org); the `.ots` file next to it proves the record existed before a specific Bitcoin block.
 4. **Encrypted source data.** The raw IBKR reports and the ledger are stored encrypted (`*.enc`). Their fingerprints are already in the timestamped records, so when they are revealed, anyone can check they were not altered.
 
