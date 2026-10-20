@@ -1,0 +1,10 @@
+{
+  "account": "U******75",
+  "broker": "Interactive Brokers",
+  "date": "2026-10-16",
+  "declaration": "Every trade, deposit and withdrawal in this account from this date on is part of the public record",
+  "first_trade": "2026-10-19",
+  "statement_sha256": "ba42899ff2a31f6f0dbfe4a686283e7c5d3d681d73699cad0eb56c482bdaf6bf",
+  "type": "account_lock",
+  "written_at": "2026-10-20T14:41:10Z"
+}
