@@ -1,0 +1,27 @@
+{
+  "covers": [
+    "2026-10-16",
+    "2026-10-19"
+  ],
+  "days": {
+    "2026-10-16": {
+      "equity_sha256": "83a9a39e4e413bafbdb34ef09cbb84e1cda1b5df9f97500c0c6e069677f191e1",
+      "flows_sha256": "e76fdde89eb35cc3571534a2981e455a3ae06c811be93e5522d6e12328298284",
+      "trade_ids": [],
+      "trades_sha256": "e76fdde89eb35cc3571534a2981e455a3ae06c811be93e5522d6e12328298284"
+    },
+    "2026-10-19": {
+      "equity_sha256": "a443d2cc1a608435c6cb5a729c5e6c85aa5fb9794bace467224049c6558260a6",
+      "flows_sha256": "a824f91e9b917292aa1e5b78c852536be81bf6e0afca98d80bfed601209a46cf",
+      "trade_ids": [
+        "10409302938",
+        "10409303764"
+      ],
+      "trades_sha256": "827b961cb7d1d70dbebdf800949680be3862fcbe452964f43a16ff02751f1142"
+    }
+  },
+  "hash_scheme": "salted-v2: each fingerprint is sha256 of canonical JSON {\"data\": ..., \"salt\": s}, where s = HMAC-SHA256(owner key, \"nugget-record-salt|\" + date). Without the salt the values behind a fingerprint cannot be guessed; the owner can reveal one day's salt (scripts/reveal_salt.py) to let anyone check that day against the decrypted statement.",
+  "positions_sha256": "732376a377b02d1ede1c1026159acf60311d471eae9cdad45657472b5f9d95e3",
+  "statement_sha256": "ba42899ff2a31f6f0dbfe4a686283e7c5d3d681d73699cad0eb56c482bdaf6bf",
+  "written_at": "2026-10-20T15:07:40Z"
+}
