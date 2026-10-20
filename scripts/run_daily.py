@@ -57,6 +57,19 @@ def main() -> int:
     if raw:
         parsed = flex.parse(raw)
         print("Report sections:", ", ".join(parsed["sections"]) or "none")
+        # Diagnostics without amounts: which account and period IBKR returned, and how many rows of each kind.
+        try:
+            import xml.etree.ElementTree as _ET
+            _st = _ET.fromstring(raw).find(".//FlexStatement")
+            _acct = parsed.get("account") or ""
+            _n = lambda tag: sum(1 for _ in _st.iter(tag)) if _st is not None else 0
+            print(f"Report period {parsed['from']}..{parsed['to']} (generated {parsed.get('generated', '')}); "
+                  f"account ending {_acct[-2:] if _acct else '??'}; statements in file: {len(_ET.fromstring(raw).findall('.//FlexStatement'))}; "
+                  f"NAV rows {len(parsed['nav'])} (non-zero {sum(1 for v in parsed['nav'].values() if v)}); "
+                  f"Trade rows {_n('Trade')} (kept {len(parsed['trades'])}); CashTransaction rows {_n('CashTransaction')} "
+                  f"(deposits/withdrawals kept {len(parsed['flows'])}); OpenPosition rows {_n('OpenPosition')}")
+        except Exception as _e:
+            print(f"Diagnostics failed: {_e}")
         needed = {"EquitySummaryInBase", "CashTransactions", "Trades", "OpenPositions"}
         missing = needed - set(parsed["sections"])
         if missing:
