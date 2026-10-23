@@ -1,0 +1,20 @@
+{
+  "covers": [
+    "2026-10-22"
+  ],
+  "days": {
+    "2026-10-22": {
+      "equity_sha256": "fc00d4d226ce3865479b51499451eb02ddc812727df08228416862ccadfdc480",
+      "flows_sha256": "ad7ba51566dbf2a484d3d9ce8062e4ed2839e9afa5fd937c8a2c2ec40ad7efd4",
+      "trade_ids": [
+        "10433411330",
+        "10433411348"
+      ],
+      "trades_sha256": "eea42b847635603f5b50f1e6d9232ccf171f40765dcd883e04516f8571f7c24f"
+    }
+  },
+  "hash_scheme": "salted-v2: each fingerprint is sha256 of canonical JSON {\"data\": ..., \"salt\": s}, where s = HMAC-SHA256(owner key, \"nugget-record-salt|\" + date). Without the salt the values behind a fingerprint cannot be guessed; the owner can reveal one day's salt (scripts/reveal_salt.py) to let anyone check that day against the decrypted statement.",
+  "positions_sha256": "b519c3208e02c5307d8a5b066b6805102c741c81fdb56dfbbed9c0aad97108cb",
+  "statement_sha256": "969379a14fc129cc8980f3288e8f117c9cf6de1499c15e02e677ade85c1fbc51",
+  "written_at": "2026-10-23T07:59:52Z"
+}
