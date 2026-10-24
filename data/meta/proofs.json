@@ -12,6 +12,10 @@
     "status": "confirmed"
   },
   "2026-10-22.json": {
+    "block": 972739,
+    "status": "confirmed"
+  },
+  "2026-10-23.json": {
     "status": "pending"
   },
   "genesis.json": {
